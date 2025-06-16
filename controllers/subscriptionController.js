@@ -1,18 +1,19 @@
 // controllers/subscriptionController.js
 const User = require('../models/userModel');
-const paypal = require('@paypal/paypal-server-sdk'); // Import the core SDK
+// Import the specific request objects from the SDK's 'orders' submodule
+const { OrdersCreateRequest, OrdersCaptureRequest } = require('@paypal/paypal-server-sdk/orders');
 const { client } = require('../utils/paypalClient'); // Import the configured PayPal client
 const {
   SUBSCRIPTION_PRICE,
   SUBSCRIPTION_CURRENCY,
-  SUBSCRIPTION_PLAN_ID, // Ensure this is imported
-  SERVER_BASE_URL, // For example return/cancel URLs
-  FRONTEND_URL // A more likely candidate for return/cancel URLs
+  FRONTEND_URL, // Was SERVER_BASE_URL, FRONTEND_URL is better for these PayPal URLs
+  SUBSCRIPTION_PLAN_ID // Added in a previous step to appConfig
 } = require('../config/appConfig');
 
 const createSubscriptionOrder = async (req, res, next) => {
   try {
-    const request = new paypal.orders.OrdersCreateRequest();
+    // Use the imported request class
+    const request = new OrdersCreateRequest();
     request.prefer("return=representation"); // Get full response, not just status
     request.requestBody({
       intent: 'CAPTURE',
@@ -46,42 +47,32 @@ const createSubscriptionOrder = async (req, res, next) => {
     });
 
   } catch (error) {
+    // Error handling as previously implemented (checking for PayPalHttpError or AxiosError)
     // console.error("PayPal Order Creation Error:", error);
-    // Check if it's a PayPalHttpError for more details
-    if (error.isAxiosError && error.response) { // AxiosError is typical for paypal-server-sdk v1
-        // console.error("PayPal API Error Details:", error.response.data);
-        // For paypal-server-sdk, error might be an instance of paypal.core.PayPalHttpError
-        // which has a statusCode and message (often JSON string in error.message)
-        let errorMessage = 'Failed to create PayPal order.';
-        if (error.statusCode && error.message) {
-            try {
-                const paypalError = JSON.parse(error.message);
-                errorMessage = paypalError.details && paypalError.details.length > 0
-                               ? paypalError.details.map(d => d.issue + ': ' + d.description).join('; ')
-                               : paypalError.message || errorMessage;
-            } catch (parseErr) {
-                // If error.message is not JSON, use it directly or fallback
-                errorMessage = error.message || errorMessage;
-            }
-            return res.status(error.statusCode || 500).json({ message: errorMessage });
-        }
-         return res.status(500).json({ message: 'Failed to create PayPal order due to API error.'});
-    } else if (error instanceof paypal.core.PayPalHttpError) { // For newer SDKs if they use this error type
-        let errorMessage = 'Failed to create PayPal order.';
+    let errorMessage = 'Failed to create PayPal order.';
+    let statusCode = 500;
+
+    if (error.statusCode) { // PayPalHttpError often has statusCode
+        statusCode = error.statusCode;
         try {
-            const details = JSON.parse(error.message); // error.message often contains JSON details
-            if (details && details.details && Array.isArray(details.details) && details.details.length > 0) {
-                errorMessage = details.details.map(d => `${d.issue}: ${d.description}`).join('; ');
-            } else if (details && details.message) {
-                errorMessage = details.message;
-            }
-        } catch (e) {
-            // fallback if error.message is not JSON
+            const paypalError = JSON.parse(error.message);
+            errorMessage = (paypalError.details && paypalError.details.length > 0
+                           ? paypalError.details.map(d => d.issue + ': ' + d.description).join('; ')
+                           : paypalError.message) || errorMessage;
+        } catch (parseErr) {
+            errorMessage = error.message || errorMessage; // Use raw message if not JSON
         }
-        return res.status(error.statusCode || 500).json({ message: errorMessage });
+    } else if (error.isAxiosError && error.response && error.response.data) { // Deprecated SDK might use Axios
+        statusCode = error.response.status;
+        const paypalError = error.response.data;
+        errorMessage = (paypalError.details && paypalError.details.length > 0
+                       ? paypalError.details.map(d => d.issue + ': ' + d.description).join('; ')
+                       : paypalError.message) || errorMessage;
+    } else if (error.message) {
+        errorMessage = error.message;
     }
-    // Fallback for other types of errors
-    next(error);
+
+    return res.status(statusCode).json({ message: errorMessage });
   }
 };
 
@@ -94,9 +85,11 @@ const captureSubscriptionPayment = async (req, res, next) => {
   }
 
   try {
-    const request = new paypal.orders.OrdersCaptureRequest(orderID);
-    request.requestBody({}); // Empty body for capture after approval
+    // Use the imported request class
+    const request = new OrdersCaptureRequest(orderID);
+    request.requestBody({});
 
+    // Use the client from paypalClient.js
     const response = await client.execute(request);
     // response.result contains the capture details
 
@@ -156,34 +149,32 @@ const captureSubscriptionPayment = async (req, res, next) => {
     });
 
   } catch (error) {
+    // Error handling as previously implemented
     // console.error("PayPal Payment Capture Error:", error);
-    if (error.isAxiosError && error.response) { // Or PayPalHttpError logic similar to createOrder
-        let errorMessage = 'Failed to capture PayPal payment.';
-         if (error.statusCode && error.message) {
-            try {
-                const paypalError = JSON.parse(error.message);
-                errorMessage = paypalError.details && paypalError.details.length > 0
-                               ? paypalError.details.map(d => d.issue + ': ' + d.description).join('; ')
-                               : paypalError.message || errorMessage;
-            } catch (parseErr) {
-                errorMessage = error.message || errorMessage;
-            }
-            return res.status(error.statusCode || 500).json({ message: errorMessage });
-        }
-        return res.status(500).json({ message: 'Failed to capture PayPal payment due to API error.'});
-    } else if (error instanceof paypal.core.PayPalHttpError) {
-        let errorMessage = 'Failed to capture PayPal payment.';
+    let errorMessage = 'Failed to capture PayPal payment.';
+    let statusCode = 500;
+
+    if (error.statusCode) { // PayPalHttpError
+        statusCode = error.statusCode;
         try {
-            const details = JSON.parse(error.message);
-            if (details && details.details && Array.isArray(details.details) && details.details.length > 0) {
-                errorMessage = details.details.map(d => `${d.issue}: ${d.description}`).join('; ');
-            } else if (details && details.message) {
-                errorMessage = details.message;
-            }
-        } catch (e) { /* fallback */ }
-        return res.status(error.statusCode || 500).json({ message: errorMessage });
+            const paypalError = JSON.parse(error.message);
+            errorMessage = (paypalError.details && paypalError.details.length > 0
+                           ? paypalError.details.map(d => d.issue + ': ' + d.description).join('; ')
+                           : paypalError.message) || errorMessage;
+        } catch (parseErr) {
+            errorMessage = error.message || errorMessage;
+        }
+    } else if (error.isAxiosError && error.response && error.response.data) { // Deprecated SDK
+        statusCode = error.response.status;
+        const paypalError = error.response.data;
+        errorMessage = (paypalError.details && paypalError.details.length > 0
+                       ? paypalError.details.map(d => d.issue + ': ' + d.description).join('; ')
+                       : paypalError.message) || errorMessage;
+    } else if (error.message) {
+        errorMessage = error.message;
     }
-    next(error); // Fallback for other errors (e.g., DB save error)
+
+    return res.status(statusCode).json({ message: errorMessage });
   }
 };
 
