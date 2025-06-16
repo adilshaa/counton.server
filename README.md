@@ -33,6 +33,8 @@ This application uses a token-based authentication system:
 - Basic security headers with `helmet`
 - Rate limiting with `express-rate-limit`
 - Data persistence with MongoDB using Mongoose ODM
+- User activity tracking (last login date, active status)
+- Placeholder for subscription management (monthly plan, status tracking)
 - CORS (Cross-Origin Resource Sharing) enabled for all origins (default configuration)
 - Centralized application configuration (`config/appConfig.js`)
 - Utility functions for token generation and verification (`utils/tokenUtils.js`)
@@ -115,22 +117,126 @@ NODE_ENV=development
 
 ## API Endpoints
 
+### Authentication (`/auth`)
+
 -   **`POST /auth/register`**: Register a new user.
     *   **Body**: `{ "username": "user", "password": "password" }`
-    *   **Response**: `201 OK` with `{ message, accessToken, user: { id, username } }`. Sets HttpOnly refresh token cookie.
+    *   **Response (201 OK)**: Sets HttpOnly refresh token cookie.
+        ```json
+        {
+          "message": "User registered successfully.",
+          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          "user": {
+            "id": "507f191e810c19729de860ea",
+            "username": "newuser",
+            "isActive": true,
+            "lastLoginAt": "2023-10-27T10:00:00.000Z",
+            "subscriptionStatus": "none",
+            "subscriptionPlan": "none"
+          }
+        }
+        ```
 -   **`POST /auth/login`**: Log in an existing user.
     *   **Body**: `{ "username": "user", "password": "password" }`
-    *   **Response**: `200 OK` with `{ message, accessToken, user: { id, username } }`. Sets HttpOnly refresh token cookie.
+    *   **Response (200 OK)**: Sets HttpOnly refresh token cookie.
+        ```json
+        {
+          "message": "Login successful.",
+          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          "user": {
+            "id": "507f191e810c19729de860ea",
+            "username": "testuser",
+            "isActive": true,
+            "lastLoginAt": "2023-10-27T10:00:00.000Z",
+            "subscriptionStatus": "none",
+            "subscriptionPlan": "none"
+          }
+        }
+        ```
 -   **`POST /auth/refresh-token`**: Obtain a new access token using a valid refresh token (sent via HttpOnly cookie).
-    *   **Response**: `200 OK` with `{ message, accessToken }`. Sets a new HttpOnly refresh token cookie (rotation).
+    *   **Response (200 OK)**: Sets a new HttpOnly refresh token cookie (rotation).
+        ```json
+        {
+          "message": "Access token refreshed successfully.",
+          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        }
+        ```
 -   **`POST /auth/logout`**: Log out the current user.
-    *   **Response**: `200 OK` with `{ message }`. Clears the refresh token cookie.
+    *   **Response (200 OK)**: `{ message }`. Clears the refresh token cookie.
+
+### User Profile & Data
+
 -   **`GET /profile`**: (Protected) Get the current user's profile information.
     *   **Headers**: Requires `Authorization: Bearer <accessToken>`
-    *   **Response**: `200 OK` with user profile data.
+    *   **Response (200 OK)**: User profile data.
 -   **`GET /api/data`**: (Protected) Get sample protected data.
     *   **Headers**: Requires `Authorization: Bearer <accessToken>`
-    *   **Response**: `200 OK` with sample data.
+    *   **Response (200 OK)**: Sample data.
+
+### Subscription API (Placeholders)
+
+All subscription endpoints require JWT authentication (Bearer token). Base path: `/api/subscriptions`
+
+*   **`POST /api/subscriptions/create-order`**
+    *   **Description**: (Placeholder) Simulates the creation of a subscription order (e.g., with PayPal).
+    *   **Access**: Private (JWT Authenticated)
+    *   **Response (200 OK - Placeholder)**:
+        ```json
+        {
+          "message": "Simulated order created successfully (placeholder).",
+          "orderId": "simulated_paypal_order_id_1678886400000",
+          "plan": "monthly_standard",
+          "amount": 10.00
+        }
+        ```
+
+*   **`POST /api/subscriptions/capture-payment`**
+    *   **Description**: (Placeholder) Simulates capturing a payment and activating the user's subscription. In a real scenario, you would send details obtained from the payment provider (e.g., PayPal `orderID`).
+    *   **Access**: Private (JWT Authenticated)
+    *   **Request Body (Example - not strictly enforced by placeholder)**:
+        ```json
+        {
+          "orderId": "simulated_paypal_order_id_1678886400000"
+        }
+        ```
+    *   **Response (200 OK - Placeholder)**:
+        ```json
+        {
+          "message": "Subscription activated successfully (placeholder).",
+          "subscription": {
+            "plan": "monthly_standard",
+            "subscribedAt": "2023-10-27T10:05:00.000Z",
+            "expiresAt": "2023-11-26T10:05:00.000Z",
+            "status": "active",
+            "lastPaymentAmount": 10.00,
+            "lastPaymentDate": "2023-10-27T10:05:00.000Z",
+            "paymentTransactionId": "simulated_paypal_tx_id_1678886405000"
+          }
+        }
+        ```
+
+*   **`GET /api/subscriptions/status`**
+    *   **Description**: Retrieves the current authenticated user's subscription status and details.
+    *   **Access**: Private (JWT Authenticated)
+    *   **Response (200 OK)**:
+        ```json
+        {
+          "plan": "monthly_standard", // or "none"
+          "status": "active", // or "none", "expired", etc.
+          "subscribedAt": "2023-10-27T10:05:00.000Z",
+          "expiresAt": "2023-11-26T10:05:00.000Z",
+          "lastPaymentAmount": 10.00,
+          "lastPaymentDate": "2023-10-27T10:05:00.000Z",
+          "paymentTransactionId": "simulated_paypal_tx_id_1678886405000"
+        }
+        ```
+
+## Data Models
+
+The primary data model is the `User` model (`models/userModel.js`), which includes fields for:
+- `username`, `password` (hashed)
+- `createdAt`, `lastLoginAt`, `isActive`
+- Embedded subscription details: `subscriptionPlan`, `subscribedAt`, `expiresAt`, `lastPaymentAmount`, `lastPaymentDate`, `paymentTransactionId`, `subscriptionStatus`.
 
 ## Security Considerations
 
@@ -174,8 +280,8 @@ This server implements several security features, but security is an ongoing pro
 ### 8. Rate Limiting
 -   *(This section remains largely the same.)*
 
-### 9. Session Management (Now "Token Management")
--   This section should be re-titled or merged with "Token Security (JWT)". The old session-specific points are no longer relevant.
+### 9. Token Management (Formerly Session Management)
+-   The security of tokens is paramount. Refer to the "Token Security (JWT)" section for details on handling access and refresh tokens, managing their lifecycle, and storage best practices.
 
 ### 10. Error Handling
 -   *(This section remains largely the same.)*

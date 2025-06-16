@@ -25,7 +25,13 @@ const registerUser = async (req, res, next) => {
     if (existingUser) {
       return res.status(400).json({ message: 'Username already taken.' });
     }
-    const newUser = new User({ username, password });
+
+    // Create new user instance. isActive, subscriptionPlan, subscriptionStatus will use schema defaults.
+    const newUser = new User({
+      username,
+      password,
+      lastLoginAt: new Date() // Set lastLoginAt as registration logs them in
+    });
     await newUser.save();
 
     // Generate tokens for the new user
@@ -47,7 +53,14 @@ const registerUser = async (req, res, next) => {
     return res.status(201).json({
       message: 'User registered successfully.',
       accessToken,
-      user: { id: newUser._id, username: newUser.username } // Send some user info
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        isActive: newUser.isActive, // Reflect schema default
+        lastLoginAt: newUser.lastLoginAt, // Reflect value set above
+        subscriptionStatus: newUser.subscriptionStatus, // Reflect schema default
+        subscriptionPlan: newUser.subscriptionPlan // Reflect schema default
+      }
     });
 
   } catch (error) {
@@ -60,39 +73,51 @@ const registerUser = async (req, res, next) => {
 };
 
 const loginUser = (req, res, next) => {
-  // We still use passport.authenticate('local') to verify username/password
-  passport.authenticate('local', { session: false }, (err, user, info) => {
-    // Set session: false as we are not using sessions for JWT
+  passport.authenticate('local', { session: false }, async (err, user, info) => { // Make callback async
     if (err) { return next(err); }
     if (!user) {
       return res.status(401).json({ message: info ? info.message : 'Login failed. Check username or password.' });
     }
 
-    // User is authenticated by local strategy, now generate tokens
-    const userPayloadForAccessToken = { id: user._id, username: user.username };
-    // For refresh token, just user ID is usually enough, maybe a version for invalidation strategies
-    const userPayloadForRefreshToken = { id: user._id };
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'Forbidden: Your account is inactive. Please contact support.' });
+    }
 
-    const accessToken = generateAccessToken(userPayloadForAccessToken);
-    const refreshToken = generateRefreshToken(userPayloadForRefreshToken);
+    try {
+      // Update lastLoginAt
+      user.lastLoginAt = new Date();
+      await user.save(); // Save the updated user document
 
-    // TODO (Optional): Store refresh token (hashed) in DB associated with user for invalidation
+      // User is authenticated and active, now generate tokens
+      const userPayloadForAccessToken = { id: user._id, username: user.username };
+      const userPayloadForRefreshToken = { id: user._id };
 
-    // Send refresh token as an HttpOnly cookie
-    res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
-      httpOnly: true,
-      secure: NODE_ENV === 'production', // Send only over HTTPS in production
-      maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
-      // sameSite: 'Lax' or 'Strict' // Consider SameSite attribute for CSRF protection if cookie is used by browser navigation
-    });
+      const accessToken = generateAccessToken(userPayloadForAccessToken);
+      const refreshToken = generateRefreshToken(userPayloadForRefreshToken);
 
-    // Send access token (and user info) in response body
-    res.status(200).json({
-      message: 'Login successful.',
-      accessToken,
-      user: { id: user._id, username: user.username } // Send some user info
-    });
+      res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
+        httpOnly: true,
+        secure: NODE_ENV === 'production',
+        maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
+      });
 
+      res.status(200).json({
+        message: 'Login successful.',
+        accessToken,
+        user: {
+          id: user._id,
+          username: user.username,
+          // Optionally return other non-sensitive fields like isActive, lastLoginAt, subscriptionStatus
+          isActive: user.isActive,
+          lastLoginAt: user.lastLoginAt,
+          subscriptionStatus: user.subscriptionStatus
+        }
+      });
+    } catch (saveError) {
+      // console.error("Error saving user during login (lastLoginAt update):", saveError);
+      return next(saveError); // Pass to global error handler
+    }
   })(req, res, next);
 };
 

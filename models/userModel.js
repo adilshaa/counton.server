@@ -19,6 +19,39 @@ const UserSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  // New fields:
+  lastLoginAt: {
+    type: Date
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  subscriptionPlan: {
+    type: String,
+    enum: ['none', 'monthly_standard'],
+    default: 'none'
+  },
+  subscribedAt: {
+    type: Date
+  },
+  expiresAt: {
+    type: Date
+  },
+  lastPaymentAmount: {
+    type: Number
+  },
+  lastPaymentDate: {
+    type: Date
+  },
+  paymentTransactionId: {
+    type: String
+  },
+  subscriptionStatus: {
+    type: String,
+    enum: ['none', 'active', 'expired', 'cancelled', 'pending_payment'],
+    default: 'none'
   }
 });
 
