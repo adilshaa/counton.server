@@ -1,7 +1,7 @@
 ```markdown
 # Secure Node.js Express Server (JWT Edition)
 
-A Node.js server built with Express, featuring user registration and login using JWT-based stateless authentication with access and refresh tokens. This project aims to demonstrate fundamental security practices for modern APIs.
+A Node.js server built with Express, featuring user registration and login using JWT-based stateless authentication with access and refresh tokens, and placeholder integration for PayPal subscription payments. This project aims to demonstrate fundamental security practices for modern APIs.
 
 ## Authentication Flow
 
@@ -34,10 +34,12 @@ This application uses a token-based authentication system:
 - Rate limiting with `express-rate-limit`
 - Data persistence with MongoDB using Mongoose ODM
 - User activity tracking (last login date, active status)
+- PayPal integration for subscription payments (order creation & capture)
 - Placeholder for subscription management (monthly plan, status tracking)
 - CORS (Cross-Origin Resource Sharing) enabled for all origins (default configuration)
 - Centralized application configuration (`config/appConfig.js`)
 - Utility functions for token generation and verification (`utils/tokenUtils.js`)
+- PayPal SDK client setup (`utils/paypalClient.js`)
 
 ## Getting Started
 
@@ -45,6 +47,7 @@ This application uses a token-based authentication system:
 
 - Node.js and npm installed
 - MongoDB instance (local or cloud-hosted like MongoDB Atlas)
+- PayPal Developer Account and Sandbox credentials (Client ID, Secret) for testing payments.
 
 ### Installation
 
@@ -97,21 +100,32 @@ PORT=3000
 SERVER_BASE_URL=http://localhost:3000
 
 # Frontend URL (Optional - defaults to http://localhost:3001)
+# Used for PayPal return/cancel URLs and potentially CORS.
 FRONTEND_URL=http://localhost:3001
 
 # Node Environment (Optional - defaults to 'development')
+# Set to 'production' in your production environment.
 NODE_ENV=development
+
+# PayPal Credentials and Environment
+# Obtain these from your PayPal Developer Dashboard.
+PAYPAL_CLIENT_ID=YOUR_PAYPAL_SANDBOX_CLIENT_ID_HERE
+PAYPAL_CLIENT_SECRET=YOUR_PAYPAL_SANDBOX_SECRET_HERE
+PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
 ```
 
 -   **`MONGODB_URI`**: Your MongoDB connection string.
 -   **`ACCESS_TOKEN_SECRET`**: **Critical for security.** Used to sign access tokens.
--   **`REFRESH_TOKEN_SECRET`**: **Critical for security.** Used to sign refresh tokens. Must be different from the access token secret.
--   **`ACCESS_TOKEN_EXPIRATION`**: How long access tokens are valid (e.g., `15m`, `1h`, `1d`).
--   **`REFRESH_TOKEN_EXPIRATION`**: How long refresh tokens are valid (e.g., `7d`, `30d`).
--   **`PORT`**: The port the server will listen on. Defaults to `3000`.
+-   **`REFRESH_TOKEN_SECRET`**: **Critical for security.** Used to sign refresh tokens.
+-   **`ACCESS_TOKEN_EXPIRATION`**: How long access tokens are valid.
+-   **`REFRESH_TOKEN_EXPIRATION`**: How long refresh tokens are valid.
+-   **`PORT`**: The port the server will listen on.
 -   **`SERVER_BASE_URL`**: The canonical base URL for this server.
--   **`FRONTEND_URL`**: The base URL for your frontend application.
+-   **`FRONTEND_URL`**: The base URL for your frontend application (used for PayPal redirects).
 -   **`NODE_ENV`**: The application environment (`development` or `production`).
+-   **`PAYPAL_CLIENT_ID`**: Your PayPal application's Client ID. **Required for payments.**
+-   **`PAYPAL_CLIENT_SECRET`**: Your PayPal application's Client Secret. **Required for payments.**
+-   **`PAYPAL_ENVIRONMENT`**: Set to `sandbox` for testing or `live` for production payments.
 
 *Note: The `.env` file is included in `.gitignore`. For production, use your hosting platform's environment variable configuration.*
 
@@ -153,8 +167,8 @@ NODE_ENV=development
           }
         }
         ```
--   **`POST /auth/refresh-token`**: Obtain a new access token using a valid refresh token (sent via HttpOnly cookie).
-    *   **Response (200 OK)**: Sets a new HttpOnly refresh token cookie (rotation).
+-   **`POST /auth/refresh-token`**: Obtain a new access token using a valid refresh token.
+    *   **Response (200 OK)**: Sets a new HttpOnly refresh token cookie.
         ```json
         {
           "message": "Access token refreshed successfully.",
@@ -164,7 +178,7 @@ NODE_ENV=development
 -   **`POST /auth/logout`**: Log out the current user.
     *   **Response (200 OK)**: `{ message }`. Clears the refresh token cookie.
 
-### User Profile & Data
+### User Profile & Data (`/` and `/api`)
 
 -   **`GET /profile`**: (Protected) Get the current user's profile information.
     *   **Headers**: Requires `Authorization: Bearer <accessToken>`
@@ -173,44 +187,41 @@ NODE_ENV=development
     *   **Headers**: Requires `Authorization: Bearer <accessToken>`
     *   **Response (200 OK)**: Sample data.
 
-### Subscription API (Placeholders)
+### Subscription API (`/api/subscriptions`)
 
-All subscription endpoints require JWT authentication (Bearer token). Base path: `/api/subscriptions`
+All subscription endpoints require JWT authentication (Bearer token).
 
 *   **`POST /api/subscriptions/create-order`**
-    *   **Description**: (Placeholder) Simulates the creation of a subscription order (e.g., with PayPal).
+    *   **Description**: Creates a subscription order with PayPal and returns an `orderID`.
     *   **Access**: Private (JWT Authenticated)
-    *   **Response (200 OK - Placeholder)**:
+    *   **Response (201 Created)**:
         ```json
         {
-          "message": "Simulated order created successfully (placeholder).",
-          "orderId": "simulated_paypal_order_id_1678886400000",
-          "plan": "monthly_standard",
-          "amount": 10.00
+          "message": "PayPal order created successfully.",
+          "orderID": "PAYPAL_GENERATED_ORDER_ID"
         }
         ```
 
 *   **`POST /api/subscriptions/capture-payment`**
-    *   **Description**: (Placeholder) Simulates capturing a payment and activating the user's subscription. In a real scenario, you would send details obtained from the payment provider (e.g., PayPal `orderID`).
+    *   **Description**: Captures the payment for a previously created PayPal order (after client-side payer approval) and activates the user's subscription.
     *   **Access**: Private (JWT Authenticated)
-    *   **Request Body (Example - not strictly enforced by placeholder)**:
+    *   **Request Body**:
         ```json
         {
-          "orderId": "simulated_paypal_order_id_1678886400000"
+          "orderID": "PAYPAL_GENERATED_ORDER_ID_FROM_CREATE_ORDER_STEP"
         }
         ```
-    *   **Response (200 OK - Placeholder)**:
+    *   **Response (200 OK)**:
         ```json
         {
-          "message": "Subscription activated successfully (placeholder).",
+          "message": "Payment captured and subscription activated successfully.",
           "subscription": {
-            "plan": "monthly_standard",
+            "plan": "monthly_standard_10_usd",
+            "status": "active",
             "subscribedAt": "2023-10-27T10:05:00.000Z",
             "expiresAt": "2023-11-26T10:05:00.000Z",
-            "status": "active",
             "lastPaymentAmount": 10.00,
-            "lastPaymentDate": "2023-10-27T10:05:00.000Z",
-            "paymentTransactionId": "simulated_paypal_tx_id_1678886405000"
+            "paymentTransactionId": "PAYPAL_CAPTURE_TRANSACTION_ID"
           }
         }
         ```
@@ -221,15 +232,30 @@ All subscription endpoints require JWT authentication (Bearer token). Base path:
     *   **Response (200 OK)**:
         ```json
         {
-          "plan": "monthly_standard", // or "none"
-          "status": "active", // or "none", "expired", etc.
+          "plan": "monthly_standard_10_usd",
+          "status": "active",
           "subscribedAt": "2023-10-27T10:05:00.000Z",
           "expiresAt": "2023-11-26T10:05:00.000Z",
           "lastPaymentAmount": 10.00,
           "lastPaymentDate": "2023-10-27T10:05:00.000Z",
-          "paymentTransactionId": "simulated_paypal_tx_id_1678886405000"
+          "paymentTransactionId": "PAYPAL_CAPTURE_TRANSACTION_ID"
         }
         ```
+
+## Payment Flow Overview (PayPal)
+
+This application uses PayPal for processing subscription payments. The typical flow is as follows:
+
+1.  **Client Initiates Order Creation**: The client sends a request to the server's `POST /api/subscriptions/create-order` endpoint.
+2.  **Server Creates PayPal Order**: The server communicates with PayPal using the PayPal SDK to create a payment order for the defined subscription amount (e.g., 10.00 USD). PayPal returns an `orderID`.
+3.  **Server Responds with `orderID`**: The server sends this `orderID` back to the client.
+4.  **Client-Side PayPal Approval**: The client uses PayPal's JavaScript SDK (e.g., PayPal Smart Payment Buttons). It uses the `orderID` to render the PayPal payment interface. The user logs into their PayPal account and approves the payment directly with PayPal.
+5.  **Client Notifies Server of Approval**: Upon successful approval in the PayPal interface, the client-side PayPal SDK provides details, including the same `orderID`. The client then sends this `orderID` to the server's `POST /api/subscriptions/capture-payment` endpoint.
+6.  **Server Captures Payment**: The server uses the `orderID` and the PayPal SDK to capture the funds from PayPal.
+7.  **Server Updates Subscription**: If the capture is successful, the server updates the user's subscription status, dates, and payment details in the database.
+8.  **Server Responds to Client**: The server sends a success message and the updated subscription details to the client.
+
+This flow ensures that sensitive payment details are handled directly by PayPal, and your server only deals with order creation and payment capture confirmations.
 
 ## Data Models
 
@@ -253,12 +279,10 @@ This server implements several security features, but security is an ongoing pro
 -   **HTTPS**: Always use HTTPS in production to protect tokens in transit.
 
 ### 2. Data Injection (NoSQL Injection)
--   *(This section remains largely the same as before, emphasizing Mongoose's role but also the need for input validation.)*
-    *(This application now uses MongoDB with Mongoose as an ODM. Mongoose schemas (defining types, required fields, etc.) and its query generation methods provide a good level of protection against MongoDB query injection attacks, especially when not constructing query parts directly from unsanitized user input. Always validate and sanitize input where appropriate, even with an ODM.)*
+-   *(This application now uses MongoDB with Mongoose as an ODM. Mongoose schemas (defining types, required fields, etc.) and its query generation methods provide a good level of protection against MongoDB query injection attacks, especially when not constructing query parts directly from unsanitized user input. Always validate and sanitize input where appropriate, even with an ODM.)*
 
 ### 3. Cross-Site Scripting (XSS)
--   *(This section remains largely the same. HttpOnly cookies for refresh tokens help, but general XSS prevention is still key.)*
--   **Prevention**: Output encoding, Content Security Policy (CSP), input validation. `helmet` provides some default protections.
+-   **Prevention**: Output encoding, Content Security Policy (CSP), input validation. `helmet` provides some default protections. HttpOnly cookies for refresh tokens help mitigate direct token theft via XSS.
 
 ### 4. Cross-Site Request Forgery (CSRF)
 -   **Issue**: While JWTs themselves are not inherently vulnerable to CSRF if sent in headers, the use of cookies for refresh tokens needs consideration.
