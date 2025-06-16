@@ -121,13 +121,6 @@ const logoutUser = (req, res, next) => {
   return res.status(200).json({ message: 'Logout successful. Please discard your access token.' });
 };
 
-module.exports = {
-  registerUser,
-  loginUser,
-  logoutUser,
-  handleRefreshToken // Add handleRefreshToken to exports
-};
-
 const handleRefreshToken = async (req, res, next) => {
   const refreshTokenFromCookie = req.cookies[REFRESH_TOKEN_COOKIE_NAME];
 
@@ -185,4 +178,11 @@ const handleRefreshToken = async (req, res, next) => {
     res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, { httpOnly: true, secure: NODE_ENV === 'production' });
     return res.status(500).json({ message: 'Internal server error during token refresh.' });
   }
+};
+
+module.exports = {
+  registerUser,
+  loginUser,
+  logoutUser,
+  handleRefreshToken
 };
