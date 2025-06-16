@@ -133,17 +133,6 @@ const loginUser = (req, res, next) => {
   })(req, res, next);
 };
 
-const logoutUser = (req, res, next) => {
-  // The primary responsibility of JWT logout on the server is to invalidate means of getting new access tokens.
-  // This means clearing the refresh token cookie.
-  // The access token is stateless and will simply expire on its own.
-  // The client should also discard the access token from its memory/storage.
-
-  // TODO (Future Enhancement): If storing refresh tokens or their versions/identifiers on the server-side
-  // (e.g., in the User model or a separate collection for an allowlist/denylist),
-  // you would invalidate the specific refresh token here.
-  // For example, by removing it from the allowlist or adding its JTI (JWT ID) to a denylist.
-  // This would prevent the compromised/logged-out refresh token from being used again,
 const logoutUser = async (req, res, next) => {
   const refreshTokenFromCookie = req.cookies[REFRESH_TOKEN_COOKIE_NAME];
 
