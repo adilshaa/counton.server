@@ -1,91 +1,86 @@
-// 1. Require necessary modules
+// server.js (Main Application File)
 const express = require('express');
-const bodyParser = require('body-parser');
 const session = require('express-session');
 const passport = require('passport');
 const helmet = require('helmet');
+const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
-const bcrypt = require('bcrypt');
 
-// User model will be imported in controllers/authController.js
+// Import main router
+const routes = require('./routes/index'); // This will import routes/index.js
 
-// 2. Initialize an Express application
+// Initialize Express app
 const app = express();
 
-// 3. Configure Helmet
-app.use(helmet());
+// Security Headers
+app.use(helmet()); // Apply helmet for various security headers
 
-// 4. Configure body-parser
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
-// 5. Configure express-session
-app.use(session({
-  secret: 'your secret key', // Replace with a strong secret key in a real application
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    // secure: true, // Uncomment this line if running on HTTPS
-    // Note: `secure: true` requires an HTTPS connection.
-    // For development without HTTPS, this should be commented out or set to false.
-  }
-}));
-
-// 6. Configure rate limiter
+// Rate Limiting - Apply to all requests or specific routes as needed
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  message: 'Too many requests from this IP, please try again after 15 minutes'
 });
-
-// Apply rate limiter to all requests
 app.use(limiter);
 
-// 7. Initialize Passport
+// Body Parser Middleware
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Session Middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your_very_secure_secret_key_change_me', // Change in production and use environment variable
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (requires HTTPS)
+    httpOnly: true, // Prevent client-side JS from accessing the cookie
+    // sameSite: 'Lax' // Consider adding SameSite attribute for CSRF protection
+  }
+}));
+
+// Passport Middleware
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Configure Passport
+// Configure Passport (strategy, serialization, deserialization)
 require('./config/passportConfig')(passport);
 
-// Auth routes are now in routes/authRoutes.js
+// Mount the main router
+// All routes defined in routes/index.js will be available from the root
+// e.g., /auth/login, /profile, /api/data
+app.use('/', routes);
 
-// 8. Define a simple root route
+// Basic Root Route (Optional - can be removed if all routes are handled by the router)
 app.get('/', (req, res) => {
-  res.send('Hello World!');
+  res.send('Secure Node.js Server with MVC structure is running!');
 });
 
-// isAuthenticated middleware is now in middleware/authMiddleware.js
-// It will be imported and used by route files or controllers directly.
-
-// User-specific routes (like /profile, /api/data) are now in routes/userRoutes.js (or similar)
-// The /login-failure route is removed as login flow provides JSON responses.
-
-// 9. Set up the server to listen on a port
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
-// Error handling middleware (should be the last middleware)
+// Error Handling Middleware (should be the last middleware)
 app.use((err, req, res, next) => {
   console.error("================================ ERROR ================================");
   console.error(`Error occurred at: ${new Date().toISOString()}`);
   console.error(`Requested URL: ${req.originalUrl}`);
   console.error(`Request Method: ${req.method}`);
-  console.error("Error details:", err.stack || err.message || err); // Log stack trace or message
+  console.error("Error details:", err.stack || err.message || err);
 
-  // Avoid sending stack trace to client in production
-  // For now, we send a generic message
   if (res.headersSent) {
-    return next(err); // If headers already sent, delegate to default Express error handler
+    return next(err);
   }
 
   res.status(err.status || 500).json({
     message: err.message || 'An unexpected error occurred on the server.',
-    // In a development environment, you might want to include err.stack
-    // stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    // stack: process.env.NODE_ENV === 'development' ? err.stack : undefined // Optional: for dev
   });
+});
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log('Registered routes (from server.js perspective, actual routes are in ./routes):');
+  console.log('- All application routes are now mounted via ./routes/index.js');
+  // To list routes more explicitly (for debugging purposes, can be complex with nested routers)
+  // you might need a helper function or to inspect `app._router.stack` or `routes.stack`.
 });
