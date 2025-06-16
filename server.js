@@ -7,9 +7,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcrypt');
 
-// Import user model (in-memory for now)
-const { users, findUserById, findUserByUsername } = require('./user');
-const LocalStrategy = require('passport-local').Strategy;
+// User model will be imported in controllers/authController.js
 
 // 2. Initialize an Express application
 const app = express();
@@ -49,144 +47,21 @@ app.use(limiter);
 app.use(passport.initialize());
 app.use(passport.session());
 
-// 3. Configure Passport Local Strategy
-passport.use(new LocalStrategy(
-  async (username, password, done) => {
-    try {
-      const user = findUserByUsername(username);
-      if (!user) {
-        return done(null, false, { message: 'Incorrect username.' });
-      }
-      const isValidPassword = await bcrypt.compare(password, user.password);
-      if (!isValidPassword) {
-        return done(null, false, { message: 'Incorrect password.' });
-      }
-      return done(null, user);
-    } catch (err) {
-      return done(err);
-    }
-  }
-));
+// Configure Passport
+require('./config/passportConfig')(passport);
 
-// 4. Implement passport.serializeUser
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-// 5. Implement passport.deserializeUser
-passport.deserializeUser((id, done) => {
-  try {
-    const user = findUserById(id);
-    done(null, user); // Passport handles if user is undefined (not found)
-  } catch (err) {
-    done(err);
-  }
-});
-
-// Registration route
-app.post('/register', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-
-    // 4a. Check for missing username or password
-    if (!username || !password) {
-      return res.status(400).send('Username and password are required');
-    }
-
-    // 4c. Check if username already exists
-    if (findUserByUsername(username)) {
-      return res.status(400).send('Username already taken');
-    }
-
-    // 4d. Hash the password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // 4e. Create new user object
-    const newUser = {
-      id: Date.now().toString(), // Simple unique ID
-      username: username,
-      password: hashedPassword
-    };
-
-    // 4f. Add user to the array
-    users.push(newUser);
-
-    // 4g. Send success response
-    res.status(201).send('User registered successfully');
-  } catch (error) {
-    // 4h. Handle unexpected errors
-    console.error('Error during registration:', error);
-    res.status(500).send('Internal server error');
-  }
-});
+// Auth routes are now in routes/authRoutes.js
 
 // 8. Define a simple root route
 app.get('/', (req, res) => {
   res.send('Hello World!');
 });
 
-// 6. Login route
-app.post('/login', (req, res, next) => {
-  passport.authenticate('local', (err, user, info) => {
-    if (err) { return next(err); }
-    if (!user) { return res.status(401).json({ message: info ? info.message : 'Login failed' }); }
-    req.logIn(user, (err) => {
-      if (err) { return next(err); }
-      return res.status(200).json({ message: 'Login successful', userId: user.id, username: user.username });
-    });
-  })(req, res, next);
-});
+// isAuthenticated middleware is now in middleware/authMiddleware.js
+// It will be imported and used by route files or controllers directly.
 
-// Middleware to check if user is authenticated
-function isAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  res.status(401).json({ message: 'You are not authorized to view this resource. Please log in.' });
-}
-
-// 7. Profile and other protected routes
-app.get('/profile', isAuthenticated, (req, res) => {
-  res.status(200).json({
-    message: 'Welcome to your profile!',
-    userId: req.user.id,
-    username: req.user.username
-  });
-});
-
-// Logout route
-app.post('/logout', (req, res, next) => {
-  req.logout(function(err) {
-    if (err) {
-      console.error('Logout error:', err);
-      return next(err);
-    }
-    req.session.destroy((err) => {
-      if (err) {
-        console.error('Session destruction error:', err);
-        // Still try to send a response, but indicate potential issue
-        return res.status(500).json({ message: 'Logout partially failed. Could not destroy session.' });
-      }
-      // Default cookie name for express-session is 'connect.sid'
-      // Ensure your session cookie name matches if you've configured it differently.
-      res.clearCookie('connect.sid');
-      res.status(200).json({ message: 'Logout successful' });
-    });
-  });
-});
-
-app.get('/login-failure', (req, res) => {
-  res.status(401).send('Login failed. Please try again.');
-});
-
-// New protected route
-app.get('/api/data', isAuthenticated, (req, res) => {
-  res.status(200).json({
-    secretData: 'This is some protected data only for logged-in users.',
-    timestamp: Date.now()
-  });
-});
+// User-specific routes (like /profile, /api/data) are now in routes/userRoutes.js (or similar)
+// The /login-failure route is removed as login flow provides JSON responses.
 
 // 9. Set up the server to listen on a port
 const PORT = process.env.PORT || 3000;
