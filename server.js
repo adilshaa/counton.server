@@ -5,6 +5,7 @@ const passport = require('passport');
 const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
+const cors = require('cors'); // Import CORS
 
 // Import main router
 const routes = require('./routes/index'); // This will import routes/index.js
@@ -12,6 +13,9 @@ const connectDB = require('./config/database'); // Import connectDB function
 
 // Initialize Express app
 const app = express();
+
+// Enable CORS for all origins with default settings
+app.use(cors());
 
 // Security Headers
 app.use(helmet()); // Apply helmet for various security headers

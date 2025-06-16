@@ -13,6 +13,7 @@ A basic Node.js server built with Express, featuring user registration, login, a
 - Basic security headers with `helmet`
 - Rate limiting with `express-rate-limit`
 - Data persistence with MongoDB using Mongoose ODM
+- CORS (Cross-Origin Resource Sharing) enabled for all origins (default configuration)
 
 ## Getting Started
 
@@ -21,7 +22,7 @@ A basic Node.js server built with Express, featuring user registration, login, a
 - Node.js and npm installed
 - MongoDB instance (local or cloud-hosted like MongoDB Atlas)
 
-### Installation & Running
+### Installation
 
 1.  Clone the repository (or create the files as per the commit).
 2.  Navigate to the project directory:
@@ -33,11 +34,20 @@ A basic Node.js server built with Express, featuring user registration, login, a
     npm install
     ```
 4.  Configure environment variables (see Configuration section below).
-5.  Start the server:
+
+### Running the Server
+
+-   **Production mode:**
     ```bash
-    node server.js
+    npm start
+    # This typically runs: node server.js
     ```
-    The server will typically start on `http://localhost:3000`.
+-   **Development mode (with auto-restart using `nodemon`):**
+    ```bash
+    npm run dev
+    # This runs: nodemon server.js
+    ```
+The server will typically start on `http://localhost:3000`.
 
 ### Configuration
 
