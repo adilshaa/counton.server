@@ -19,10 +19,11 @@ const routes = require('./routes/index');
 // Initialize Express app
 const app = express();
 
-// Enable CORS for all origins with default settings
-app.use(cors());
-// For more restrictive CORS in the future, you could use:
-// app.use(cors({ origin: FRONTEND_URL })); // Example
+// Update CORS configuration
+app.use(cors({
+  origin: FRONTEND_URL, // Use the configured frontend URL from appConfig
+  credentials: true     // Allow cookies to be sent and received from frontend
+}));
 
 // Cookie Parser Middleware
 app.use(cookieParser());

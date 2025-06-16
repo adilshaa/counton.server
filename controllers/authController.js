@@ -50,9 +50,10 @@ const registerUser = async (req, res, next) => {
 
     res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
       httpOnly: true,
-      secure: NODE_ENV === 'production', // Send only over HTTPS in production
+      secure: true, // Required for SameSite=None
+      sameSite: 'None',
+      path: '/',
       maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
-      // sameSite: 'Lax' or 'Strict' // Consider SameSite attribute
     });
 
     return res.status(201).json({
@@ -110,7 +111,9 @@ const loginUser = (req, res, next) => {
 
       res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
         httpOnly: true,
-        secure: NODE_ENV === 'production',
+        secure: true, // Required for SameSite=None
+        sameSite: 'None',
+        path: '/',
         maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
       });
 
@@ -140,8 +143,9 @@ const logoutUser = async (req, res, next) => {
   // This ensures the client-side token is removed.
   res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
     httpOnly: true,
-    secure: NODE_ENV === 'production',
-    // sameSite: 'Strict' or 'Lax' // Should match how it was set
+    secure: true, // Required for SameSite=None
+    sameSite: 'None',
+    path: '/'
   });
   // It's also good practice to send a no-cache header to prevent client-side caching of the logout response.
   res.setHeader('Cache-Control', 'no-store');
@@ -199,7 +203,12 @@ const handleRefreshToken = async (req, res, next) => {
   const decodedRefreshToken = verifyRefreshToken(refreshTokenFromCookie);
 
   if (!decodedRefreshToken || !decodedRefreshToken.id) {
-    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, { httpOnly: true, secure: NODE_ENV === 'production' });
+    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
+      httpOnly: true,
+      secure: true, // Required for SameSite=None
+      sameSite: 'None',
+      path: '/'
+    });
     return res.status(403).json({ message: 'Forbidden: Invalid refresh token signature or payload.' });
   }
 
@@ -208,7 +217,12 @@ const handleRefreshToken = async (req, res, next) => {
     const user = await User.findById(decodedRefreshToken.id).select('+currentRefreshToken +currentRefreshTokenExpiresAt');
 
     if (!user) {
-      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, { httpOnly: true, secure: NODE_ENV === 'production' });
+      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
+        httpOnly: true,
+        secure: true, // Required for SameSite=None
+        sameSite: 'None',
+        path: '/'
+      });
       return res.status(403).json({ message: 'Forbidden: User not found for refresh token.' });
     }
 
@@ -223,7 +237,12 @@ const handleRefreshToken = async (req, res, next) => {
       user.currentRefreshTokenExpiresAt = null;
       await user.save();
 
-      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, { httpOnly: true, secure: NODE_ENV === 'production' });
+      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
+        httpOnly: true,
+        secure: true, // Required for SameSite=None
+        sameSite: 'None',
+        path: '/'
+      });
       return res.status(403).json({ message: 'Forbidden: Refresh token is invalid, expired, or has been reused. Please log in again.' });
     }
 
@@ -246,7 +265,9 @@ const handleRefreshToken = async (req, res, next) => {
     // Set the new refresh token in the HttpOnly cookie
     res.cookie(REFRESH_TOKEN_COOKIE_NAME, newRefreshToken, {
       httpOnly: true,
-      secure: NODE_ENV === 'production',
+      secure: true, // Required for SameSite=None
+      sameSite: 'None',
+      path: '/',
       maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
     });
 
@@ -258,7 +279,12 @@ const handleRefreshToken = async (req, res, next) => {
   } catch (error) {
     // console.error("Error in handleRefreshToken:", error);
     // It's safer to clear the cookie on any unexpected error during the refresh process.
-    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, { httpOnly: true, secure: NODE_ENV === 'production' });
+    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
+      httpOnly: true,
+      secure: true, // Required for SameSite=None
+      sameSite: 'None',
+      path: '/'
+    });
     return res.status(500).json({ message: 'Internal server error during token refresh.' });
   }
 };

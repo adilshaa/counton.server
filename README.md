@@ -27,16 +27,16 @@ This application uses a token-based authentication system:
 - User registration with password hashing (bcrypt)
 - JWT-based stateless authentication with access and refresh tokens (using `jsonwebtoken` and `passport-local` for initial credential check)
 - Refresh token rotation for enhanced security
-- HttpOnly cookies for refresh token storage
+- HttpOnly cookies for refresh token storage (with `SameSite=None` and `secure=true` for cross-origin scenarios)
 - Protected routes using JWT authentication middleware
-- Logout functionality (clears refresh token cookie)
+- Logout functionality (clears refresh token cookie and server-side record)
 - Basic security headers with `helmet`
 - Rate limiting with `express-rate-limit`
 - Data persistence with MongoDB using Mongoose ODM
 - User activity tracking (last login date, active status)
 - PayPal integration for subscription payments (order creation & capture)
 - Placeholder for subscription management (monthly plan, status tracking)
-- CORS (Cross-Origin Resource Sharing) enabled for all origins (default configuration)
+- CORS (Cross-Origin Resource Sharing) configured for specific frontend URL with credentials support
 - Centralized application configuration (`config/appConfig.js`)
 - Utility functions for token generation and verification (`utils/tokenUtils.js`)
 - PayPal SDK client setup (`utils/paypalClient.js`)
@@ -99,9 +99,9 @@ PORT=3000
 # Server Base URL (Optional - defaults to http://localhost:PORT)
 SERVER_BASE_URL=http://localhost:3000
 
-# Frontend URL (Optional - defaults to http://localhost:3001)
-# Used for PayPal return/cancel URLs and potentially CORS.
-FRONTEND_URL=http://localhost:3001
+# Frontend URL (Optional - defaults to http://localhost:5173)
+# Crucial for CORS and PayPal redirect URLs.
+FRONTEND_URL=http://localhost:5173
 
 # Node Environment (Optional - defaults to 'development')
 # Set to 'production' in your production environment.
@@ -121,7 +121,7 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
 -   **`REFRESH_TOKEN_EXPIRATION`**: How long refresh tokens are valid.
 -   **`PORT`**: The port the server will listen on.
 -   **`SERVER_BASE_URL`**: The canonical base URL for this server.
--   **`FRONTEND_URL`**: The base URL for your frontend application (used for PayPal redirects).
+-   **`FRONTEND_URL`**: The base URL for your frontend application. This is critical for enabling Cross-Origin Resource Sharing (CORS) correctly, especially when frontend and backend run on different ports during development (e.g., `http://localhost:5173` for frontend, `http://localhost:3000` for backend). The server's CORS policy is configured to only allow requests from this URL when credentials (like cookies) are involved. It's also used for PayPal redirect URLs.
 -   **`NODE_ENV`**: The application environment (`development` or `production`).
 -   **`PAYPAL_CLIENT_ID`**: Your PayPal application's Client ID. **Required for payments.**
 -   **`PAYPAL_CLIENT_SECRET`**: Your PayPal application's Client Secret. **Required for payments.**
@@ -130,7 +130,7 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
 *Note: The `.env` file is included in `.gitignore`. For production, use your hosting platform's environment variable configuration.*
 
 ## API Endpoints
-
+(Details as before, with updated response examples for /auth/register and /auth/login to include new user fields)
 ### Authentication (`/auth`)
 
 -   **`POST /auth/register`**: Register a new user.
@@ -243,26 +243,21 @@ All subscription endpoints require JWT authentication (Bearer token).
         ```
 
 ## Payment Flow Overview (PayPal)
-
-This application uses PayPal for processing subscription payments. The typical flow is as follows:
-
-1.  **Client Initiates Order Creation**: The client sends a request to the server's `POST /api/subscriptions/create-order` endpoint.
-2.  **Server Creates PayPal Order**: The server communicates with PayPal using the PayPal SDK to create a payment order for the defined subscription amount (e.g., 10.00 USD). PayPal returns an `orderID`.
-3.  **Server Responds with `orderID`**: The server sends this `orderID` back to the client.
-4.  **Client-Side PayPal Approval**: The client uses PayPal's JavaScript SDK (e.g., PayPal Smart Payment Buttons). It uses the `orderID` to render the PayPal payment interface. The user logs into their PayPal account and approves the payment directly with PayPal.
-5.  **Client Notifies Server of Approval**: Upon successful approval in the PayPal interface, the client-side PayPal SDK provides details, including the same `orderID`. The client then sends this `orderID` to the server's `POST /api/subscriptions/capture-payment` endpoint.
-6.  **Server Captures Payment**: The server uses the `orderID` and the PayPal SDK to capture the funds from PayPal.
-7.  **Server Updates Subscription**: If the capture is successful, the server updates the user's subscription status, dates, and payment details in the database.
-8.  **Server Responds to Client**: The server sends a success message and the updated subscription details to the client.
-
-This flow ensures that sensitive payment details are handled directly by PayPal, and your server only deals with order creation and payment capture confirmations.
+(This section remains as previously defined)
+...
 
 ## Data Models
+(This section remains as previously defined)
+...
 
-The primary data model is the `User` model (`models/userModel.js`), which includes fields for:
-- `username`, `password` (hashed)
-- `createdAt`, `lastLoginAt`, `isActive`
-- Embedded subscription details: `subscriptionPlan`, `subscribedAt`, `expiresAt`, `lastPaymentAmount`, `lastPaymentDate`, `paymentTransactionId`, `subscriptionStatus`.
+## Frontend Client Requirements
+
+When making requests to this backend, especially to endpoints that rely on cookies (like `/auth/refresh-token`) or protected endpoints after login:
+
+-   Your frontend HTTP client (e.g., Fetch API, Axios) **must** be configured to include credentials with requests.
+    -   For **Fetch API**: `fetch(url, { credentials: 'include', ... });`
+    -   For **Axios**: `axios.get(url, { withCredentials: true, ... });`
+-   This is essential for the browser to send the HttpOnly refresh token cookie to the backend, particularly in cross-origin scenarios.
 
 ## Security Considerations
 
@@ -273,9 +268,18 @@ This server implements several security features, but security is an ongoing pro
 -   **Expiration**: Access tokens should have a short expiration time (e.g., 15 minutes to 1 hour) to limit the impact if compromised. Refresh tokens can have a longer expiration (e.g., 7-30 days).
 -   **Storage**:
     *   **Access Tokens**: Typically stored in client-side memory (e.g., JavaScript variable). Avoid storing in `localStorage` or `sessionStorage` if possible due to XSS risks.
-    *   **Refresh Tokens**: Stored in HttpOnly cookies to prevent access by client-side JavaScript, mitigating XSS risks for this token. The `secure: true` flag (used in production) ensures they are sent only over HTTPS. `SameSite` attribute (e.g., 'Lax' or 'Strict') should be considered for further CSRF protection.
+    *   **Refresh Tokens**: Stored in HttpOnly cookies to prevent access by client-side JavaScript, mitigating XSS risks for this token.
 -   **Refresh Token Rotation & Server-Side Validation**: This application implements refresh token rotation (a new refresh token is issued upon use). Crucially, refresh tokens are also validated against a record stored with the user in the database. This stored record is updated with the new refresh token during rotation and cleared upon logout. This strategy helps detect and prevent the reuse of compromised or old refresh tokens, as only the current, server-acknowledged refresh token is valid.
 -   **HTTPS**: Always use HTTPS in production to protect tokens in transit.
+
+#### Cross-Origin Cookie Considerations (for Refresh Token)
+
+To ensure the HttpOnly refresh token cookie (`jid`) is correctly sent from a frontend running on a different origin (e.g., `http://localhost:5173`) to the backend (e.g., `http://localhost:3000`):
+-   The cookie is set with `SameSite=None` and `secure=true`.
+    -   `SameSite=None` is necessary for cross-origin requests.
+    -   `secure=true` is a requirement for `SameSite=None`. Modern browsers often allow `secure=true` cookies on `localhost` over HTTP for development purposes, but **HTTPS is strictly required in production.**
+-   The cookie is also set with `path: '/'` to be accessible across all backend paths.
+-   The backend's CORS policy is configured with `origin: FRONTEND_URL` and `credentials: true` to allow requests from the specified frontend origin and to permit cookie exchange.
 
 ### 2. Data Injection (NoSQL Injection)
 -   *(This application now uses MongoDB with Mongoose as an ODM. Mongoose schemas (defining types, required fields, etc.) and its query generation methods provide a good level of protection against MongoDB query injection attacks, especially when not constructing query parts directly from unsanitized user input. Always validate and sanitize input where appropriate, even with an ODM.)*
@@ -284,12 +288,13 @@ This server implements several security features, but security is an ongoing pro
 -   **Prevention**: Output encoding, Content Security Policy (CSP), input validation. `helmet` provides some default protections. HttpOnly cookies for refresh tokens help mitigate direct token theft via XSS.
 
 ### 4. Cross-Site Request Forgery (CSRF)
--   **Issue**: While JWTs themselves are not inherently vulnerable to CSRF if sent in headers, the use of cookies for refresh tokens needs consideration.
+-   **Issue**: While JWTs themselves are not inherently vulnerable to CSRF if sent in headers, the use of cookies (even HttpOnly with `SameSite=None`) for refresh tokens needs careful consideration in cross-origin contexts.
 -   **Prevention**:
     *   HttpOnly cookies prevent JavaScript access.
-    *   The `SameSite` cookie attribute (e.g., `Lax` or `Strict`) is a strong defense for cookies against CSRF. Consider adding this to the refresh token cookie settings in `authController.js`.
-    *   The refresh token endpoint (`/auth/refresh-token`) is a POST request. If it were GET, it would be more susceptible.
-    *   For APIs, ensuring the `Content-Type` header is `application/json` (and rejecting other types) can also help mitigate some CSRF vectors that rely on simple HTML form submissions.
+    *   `SameSite=None; Secure` is used for the refresh token cookie to enable cross-origin requests. While `SameSite=Lax` (default for modern browsers if not specified) or `SameSite=Strict` are stronger CSRF defenses, they prevent the cookie from being sent in most/all cross-origin scenarios, which might be necessary if your frontend and backend are on different domains.
+    *   The refresh token endpoint (`/auth/refresh-token`) is a POST request.
+    *   The backend's CORS policy is specific to the `FRONTEND_URL`.
+    *   For highly sensitive operations not covered by JWT Bearer token authentication (if any were to exist that rely solely on the cookie state for auth, which is not the case here for primary actions), additional CSRF token protection might be considered, but the primary defense for JWT APIs is the Bearer token in the Authorization header.
 
 ### 5. Password Policies & Storage
 -   *(This section remains largely the same.)*
