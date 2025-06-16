@@ -19,10 +19,38 @@ const routes = require('./routes/index');
 // Initialize Express app
 const app = express();
 
-// Update CORS configuration
+// CORS Configuration
+const allowedOrigins = [
+  FRONTEND_URL, // From appConfig, e.g., 'http://localhost:5173'
+  // Add other origins if needed, e.g., for 127.0.0.1 or deployed versions
+  // Example: If FRONTEND_URL is 'http://localhost:5173', you might also want 'http://127.0.0.1:5173'
+  // It's often good to derive this from FRONTEND_URL if it's localhost based
+];
+
+if (FRONTEND_URL && FRONTEND_URL.startsWith('http://localhost:')) {
+    const port = FRONTEND_URL.split(':')[2];
+    allowedOrigins.push(`http://127.0.0.1:${port}`);
+} else if (FRONTEND_URL && FRONTEND_URL.startsWith('https://localhost:')) {
+    // Though less common for dev, handle https localhost if FRONTEND_URL is set that way
+    const port = FRONTEND_URL.split(':')[2];
+    allowedOrigins.push(`https://127.0.0.1:${port}`);
+}
+
+
 app.use(cors({
-  origin: FRONTEND_URL, // Use the configured frontend URL from appConfig
-  credentials: true     // Allow cookies to be sent and received from frontend
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, Postman from app, etc.)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS: Request from origin '${origin}' blocked.`); // Optional: log blocked origins
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
 }));
 
 // Cookie Parser Middleware

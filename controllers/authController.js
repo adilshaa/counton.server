@@ -10,9 +10,13 @@ const {
 } = require('../utils/tokenUtils'); // Import token utilities
 const {
   REFRESH_TOKEN_COOKIE_NAME,
-  REFRESH_TOKEN_COOKIE_MAX_AGE,
-  NODE_ENV
+  REFRESH_TOKEN_COOKIE_MAX_AGE, // Still needed for DB expiry calculation
+  // NODE_ENV // No longer needed directly here, handled by cookieUtils
 } = require('../config/appConfig'); // Import cookie/env configurations
+const {
+  getRefreshTokenCookieOptions,
+  getClearRefreshTokenCookieOptions
+} = require('../utils/cookieUtils');
 
 // registerUser needs to be updated to return tokens instead of logging in via session
 const registerUser = async (req, res, next) => {
@@ -48,13 +52,7 @@ const registerUser = async (req, res, next) => {
 
     await newUser.save(); // Save again to store refresh token details
 
-    res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
-      httpOnly: true,
-      secure: true, // Required for SameSite=None
-      sameSite: 'None',
-      path: '/',
-      maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
-    });
+    res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, getRefreshTokenCookieOptions());
 
     return res.status(201).json({
       message: 'User registered successfully.',
@@ -109,13 +107,7 @@ const loginUser = (req, res, next) => {
 
       await user.save(); // Save again to store refresh token details
 
-      res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
-        httpOnly: true,
-        secure: true, // Required for SameSite=None
-        sameSite: 'None',
-        path: '/',
-        maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
-      });
+      res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, getRefreshTokenCookieOptions());
 
       res.status(200).json({
         message: 'Login successful.',
@@ -141,12 +133,7 @@ const logoutUser = async (req, res, next) => {
 
   // Clear the cookie regardless of whether the token is found or valid on the server.
   // This ensures the client-side token is removed.
-  res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
-    httpOnly: true,
-    secure: true, // Required for SameSite=None
-    sameSite: 'None',
-    path: '/'
-  });
+  res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
   // It's also good practice to send a no-cache header to prevent client-side caching of the logout response.
   res.setHeader('Cache-Control', 'no-store');
 
@@ -203,12 +190,7 @@ const handleRefreshToken = async (req, res, next) => {
   const decodedRefreshToken = verifyRefreshToken(refreshTokenFromCookie);
 
   if (!decodedRefreshToken || !decodedRefreshToken.id) {
-    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
-      httpOnly: true,
-      secure: true, // Required for SameSite=None
-      sameSite: 'None',
-      path: '/'
-    });
+    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
     return res.status(403).json({ message: 'Forbidden: Invalid refresh token signature or payload.' });
   }
 
@@ -217,12 +199,7 @@ const handleRefreshToken = async (req, res, next) => {
     const user = await User.findById(decodedRefreshToken.id).select('+currentRefreshToken +currentRefreshTokenExpiresAt');
 
     if (!user) {
-      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
-        httpOnly: true,
-        secure: true, // Required for SameSite=None
-        sameSite: 'None',
-        path: '/'
-      });
+      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
       return res.status(403).json({ message: 'Forbidden: User not found for refresh token.' });
     }
 
@@ -237,12 +214,7 @@ const handleRefreshToken = async (req, res, next) => {
       user.currentRefreshTokenExpiresAt = null;
       await user.save();
 
-      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
-        httpOnly: true,
-        secure: true, // Required for SameSite=None
-        sameSite: 'None',
-        path: '/'
-      });
+      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
       return res.status(403).json({ message: 'Forbidden: Refresh token is invalid, expired, or has been reused. Please log in again.' });
     }
 
@@ -263,13 +235,7 @@ const handleRefreshToken = async (req, res, next) => {
     await user.save();
 
     // Set the new refresh token in the HttpOnly cookie
-    res.cookie(REFRESH_TOKEN_COOKIE_NAME, newRefreshToken, {
-      httpOnly: true,
-      secure: true, // Required for SameSite=None
-      sameSite: 'None',
-      path: '/',
-      maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
-    });
+    res.cookie(REFRESH_TOKEN_COOKIE_NAME, newRefreshToken, getRefreshTokenCookieOptions());
 
     return res.status(200).json({
       message: 'Access token refreshed successfully.',
@@ -279,12 +245,7 @@ const handleRefreshToken = async (req, res, next) => {
   } catch (error) {
     // console.error("Error in handleRefreshToken:", error);
     // It's safer to clear the cookie on any unexpected error during the refresh process.
-    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
-      httpOnly: true,
-      secure: true, // Required for SameSite=None
-      sameSite: 'None',
-      path: '/'
-    });
+    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
     return res.status(500).json({ message: 'Internal server error during token refresh.' });
   }
 };

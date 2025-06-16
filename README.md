@@ -27,7 +27,7 @@ This application uses a token-based authentication system:
 - User registration with password hashing (bcrypt)
 - JWT-based stateless authentication with access and refresh tokens (using `jsonwebtoken` and `passport-local` for initial credential check)
 - Refresh token rotation for enhanced security
-- HttpOnly cookies for refresh token storage (with `SameSite=None` and `secure=true` for cross-origin scenarios)
+- HttpOnly cookies for refresh token storage (with environment-aware `SameSite` and `secure` attributes)
 - Protected routes using JWT authentication middleware
 - Logout functionality (clears refresh token cookie and server-side record)
 - Basic security headers with `helmet`
@@ -36,8 +36,8 @@ This application uses a token-based authentication system:
 - User activity tracking (last login date, active status)
 - PayPal integration for subscription payments (order creation & capture)
 - Placeholder for subscription management (monthly plan, status tracking)
-- CORS (Cross-Origin Resource Sharing) configured for specific frontend URL with credentials support
-- Centralized application configuration (`config/appConfig.js`)
+- CORS (Cross-Origin Resource Sharing) configured for specific frontend URL (and `127.0.0.1` variant for localhost) with credentials support
+- Centralized application configuration (`config/appConfig.js`) and cookie utilities (`utils/cookieUtils.js`)
 - Utility functions for token generation and verification (`utils/tokenUtils.js`)
 - PayPal SDK client setup (`utils/paypalClient.js`)
 
@@ -104,7 +104,7 @@ SERVER_BASE_URL=http://localhost:3000
 FRONTEND_URL=http://localhost:5173
 
 # Node Environment (Optional - defaults to 'development')
-# Set to 'production' in your production environment.
+# Set to 'production' for production builds. Affects cookie security (SameSite, Secure).
 NODE_ENV=development
 
 # PayPal Credentials and Environment
@@ -121,8 +121,10 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
 -   **`REFRESH_TOKEN_EXPIRATION`**: How long refresh tokens are valid.
 -   **`PORT`**: The port the server will listen on.
 -   **`SERVER_BASE_URL`**: The canonical base URL for this server.
--   **`FRONTEND_URL`**: The base URL for your frontend application. This is critical for enabling Cross-Origin Resource Sharing (CORS) correctly, especially when frontend and backend run on different ports during development (e.g., `http://localhost:5173` for frontend, `http://localhost:3000` for backend). The server's CORS policy is configured to only allow requests from this URL when credentials (like cookies) are involved. It's also used for PayPal redirect URLs.
--   **`NODE_ENV`**: The application environment (`development` or `production`).
+-   **`FRONTEND_URL`**: The base URL for your frontend application. This URL is primary in the server's CORS `allowedOrigins` list. For `localhost`-based `FRONTEND_URL`s, the `127.0.0.1` equivalent is also typically allowed by the server configuration. It's also used for PayPal redirect URLs.
+-   **`NODE_ENV`**: The application environment (`development` or `production`). This setting also influences security attributes for the refresh token cookie:
+    - In `development`, cookies use `SameSite=Lax` and `Secure=false` (suitable for HTTP localhost).
+    - In `production`, cookies use `SameSite=None` and `Secure=true` (requires HTTPS, allows cross-domain).
 -   **`PAYPAL_CLIENT_ID`**: Your PayPal application's Client ID. **Required for payments.**
 -   **`PAYPAL_CLIENT_SECRET`**: Your PayPal application's Client Secret. **Required for payments.**
 -   **`PAYPAL_ENVIRONMENT`**: Set to `sandbox` for testing or `live` for production payments.
@@ -274,12 +276,17 @@ This server implements several security features, but security is an ongoing pro
 
 #### Cross-Origin Cookie Considerations (for Refresh Token)
 
-To ensure the HttpOnly refresh token cookie (`jid`) is correctly sent from a frontend running on a different origin (e.g., `http://localhost:5173`) to the backend (e.g., `http://localhost:3000`):
--   The cookie is set with `SameSite=None` and `secure=true`.
-    -   `SameSite=None` is necessary for cross-origin requests.
-    -   `secure=true` is a requirement for `SameSite=None`. Modern browsers often allow `secure=true` cookies on `localhost` over HTTP for development purposes, but **HTTPS is strictly required in production.**
--   The cookie is also set with `path: '/'` to be accessible across all backend paths.
--   The backend's CORS policy is configured with `origin: FRONTEND_URL` and `credentials: true` to allow requests from the specified frontend origin and to permit cookie exchange.
+The application now uses environment-aware settings for the HttpOnly refresh token cookie (`jid`) to balance development convenience with production security, especially for cross-origin requests (e.g., frontend at `http://localhost:5173`, backend at `http://localhost:3000`):
+
+-   **In Development (`NODE_ENV !== 'production'`)**:
+    -   The cookie is set with `SameSite=Lax` and `Secure=false`.
+    -   `SameSite=Lax` provides a good balance of security and usability for `localhost` development over HTTP, even across different ports, provided the frontend makes requests with credentials.
+-   **In Production (`NODE_ENV === 'production'`)**:
+    -   The cookie is set with `SameSite=None` and `Secure=true`.
+    -   `SameSite=None` is necessary if your production frontend and backend are on different domains/subdomains.
+    -   `secure=true` is a requirement for `SameSite=None` and ensures the cookie is only sent over HTTPS. **Your production backend must be served over HTTPS.**
+-   The cookie is always set with `path: '/'` to be accessible across all backend paths and `httpOnly: true` to prevent client-side script access.
+-   The backend's CORS policy is configured to allow credentials from origins listed in `allowedOrigins` (which includes `FRONTEND_URL` and its `127.0.0.1` equivalent for localhost).
 
 ### 2. Data Injection (NoSQL Injection)
 -   *(This application now uses MongoDB with Mongoose as an ODM. Mongoose schemas (defining types, required fields, etc.) and its query generation methods provide a good level of protection against MongoDB query injection attacks, especially when not constructing query parts directly from unsanitized user input. Always validate and sanitize input where appropriate, even with an ODM.)*
@@ -288,13 +295,12 @@ To ensure the HttpOnly refresh token cookie (`jid`) is correctly sent from a fro
 -   **Prevention**: Output encoding, Content Security Policy (CSP), input validation. `helmet` provides some default protections. HttpOnly cookies for refresh tokens help mitigate direct token theft via XSS.
 
 ### 4. Cross-Site Request Forgery (CSRF)
--   **Issue**: While JWTs themselves are not inherently vulnerable to CSRF if sent in headers, the use of cookies (even HttpOnly with `SameSite=None`) for refresh tokens needs careful consideration in cross-origin contexts.
+-   **Issue**: While JWTs themselves are not inherently vulnerable to CSRF if sent in headers, the use of cookies (even HttpOnly) for refresh tokens needs careful consideration.
 -   **Prevention**:
     *   HttpOnly cookies prevent JavaScript access.
-    *   `SameSite=None; Secure` is used for the refresh token cookie to enable cross-origin requests. While `SameSite=Lax` (default for modern browsers if not specified) or `SameSite=Strict` are stronger CSRF defenses, they prevent the cookie from being sent in most/all cross-origin scenarios, which might be necessary if your frontend and backend are on different domains.
+    *   The `SameSite` cookie attribute settings (`Lax` for dev, `None` for prod) are crucial. `SameSite=None; Secure` is used for production cross-origin scenarios.
     *   The refresh token endpoint (`/auth/refresh-token`) is a POST request.
-    *   The backend's CORS policy is specific to the `FRONTEND_URL`.
-    *   For highly sensitive operations not covered by JWT Bearer token authentication (if any were to exist that rely solely on the cookie state for auth, which is not the case here for primary actions), additional CSRF token protection might be considered, but the primary defense for JWT APIs is the Bearer token in the Authorization header.
+    *   The backend's CORS policy is specific to the `FRONTEND_URL` and its `127.0.0.1` variant.
 
 ### 5. Password Policies & Storage
 -   *(This section remains largely the same.)*
