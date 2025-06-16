@@ -33,7 +33,7 @@ A basic Node.js server built with Express, featuring user registration, login, a
     ```bash
     npm install
     ```
-4.  Configure environment variables (see Configuration section below).
+4.  Configure environment variables (see Configuration section below). You can copy `.env.example` to `.env` to get started.
 
 ### Running the Server
 
@@ -47,22 +47,43 @@ A basic Node.js server built with Express, featuring user registration, login, a
     npm run dev
     # This runs: nodemon server.js
     ```
-The server will typically start on `http://localhost:3000`.
+The server will typically start on `http://localhost:3000` (or the port specified in your `.env` file).
 
 ### Configuration
 
-Before running the application, you need to set up environment variables. Create a `.env` file in the root of the project with the following variables (this file is gitignored):
+Before running the application, you need to set up environment variables. Create a `.env` file in the root of the project (you can copy `.env.example` to get started). This file is gitignored.
 
 ```env
 # MongoDB Connection URI
-MONGODB_URI=mongodb://localhost:27017/secure_node_app_dev
+# Replace with your actual MongoDB connection string if different.
+# Default database name is now 'counton_db'.
+MONGODB_URI=mongodb://localhost:27017/counton_db
 
 # Session Secret - A long, random string used to sign the session ID cookie
 SESSION_SECRET=your_very_long_random_and_secure_secret_string_here
+
+# Server Port (Optional - defaults to 3000 if not set)
+PORT=3000
+
+# Server Base URL (Optional - defaults to http://localhost:PORT)
+# Used for constructing absolute URLs if needed by the application.
+SERVER_BASE_URL=http://localhost:3000
+
+# Frontend URL (Optional - defaults to http://localhost:3001)
+# Useful if the server needs to know the frontend's URL (e.g., for CORS, redirects, email links).
+FRONTEND_URL=http://localhost:3001
+
+# Node Environment (Optional - defaults to 'development')
+# Set to 'production' in your production environment.
+NODE_ENV=development
 ```
 
--   **`MONGODB_URI`**: Your MongoDB connection string. The example above connects to a local MongoDB instance and a database named `secure_node_app_dev`. Replace with your actual URI if using a cloud-hosted database or different local setup.
--   **`SESSION_SECRET`**: A long, random, and unique string for securing sessions. **Change this to a strong secret in your environment.** This is crucial for session security.
+-   **`MONGODB_URI`**: Your MongoDB connection string. The example connects to a local MongoDB instance and the `counton_db` database.
+-   **`SESSION_SECRET`**: **Critical for security.** A long, random, and unique string for securing sessions. **Change this to a strong secret in your environment.**
+-   **`PORT`**: The port the server will listen on. Defaults to `3000` if not set in `.env`.
+-   **`SERVER_BASE_URL`**: The canonical base URL for this server. Defaults to `http://localhost:{PORT}`.
+-   **`FRONTEND_URL`**: The base URL for your frontend application. Defaults to `http://localhost:3001`. This might be used for CORS configuration or generating links.
+-   **`NODE_ENV`**: The application environment. Set to `production` for production deployments to enable certain optimizations or behaviors (like secure cookies). Defaults to `development`.
 
 *Note: The `.env` file is included in `.gitignore` and should not be committed to version control. For production environments, set these variables directly in your hosting platform's configuration.*
 

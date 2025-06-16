@@ -5,17 +5,23 @@ const passport = require('passport');
 const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
-const cors = require('cors'); // Import CORS
+const cors = require('cors');
 
-// Import main router
-const routes = require('./routes/index'); // This will import routes/index.js
-const connectDB = require('./config/database'); // Import connectDB function
+// Import configurations from appConfig.js
+const { PORT, SESSION_SECRET, SERVER_BASE_URL, FRONTEND_URL, NODE_ENV } = require('./config/appConfig');
+// NODE_ENV and SERVER_BASE_URL are imported for potential use, e.g., logging or conditional logic.
+// FRONTEND_URL is imported to be available for future, more specific CORS config.
+
+const connectDB = require('./config/database');
+const routes = require('./routes/index');
 
 // Initialize Express app
 const app = express();
 
 // Enable CORS for all origins with default settings
 app.use(cors());
+// For more restrictive CORS in the future, you could use:
+// app.use(cors({ origin: FRONTEND_URL })); // Example
 
 // Security Headers
 app.use(helmet()); // Apply helmet for various security headers
@@ -33,13 +39,13 @@ app.use(limiter);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session Middleware
+// Session Middleware - Use SESSION_SECRET from appConfig
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your_very_secure_secret_key_change_me', // Change in production and use environment variable
+  secret: SESSION_SECRET, // Sourced from appConfig (which loads from .env or has a default)
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (requires HTTPS)
+    secure: NODE_ENV === 'production', // Use secure cookies in production
     httpOnly: true, // Prevent client-side JS from accessing the cookie
     // sameSite: 'Lax' // Consider adding SameSite attribute for CSRF protection
   }
@@ -59,7 +65,7 @@ app.use('/', routes);
 
 // Basic Root Route (Optional - can be removed if all routes are handled by the router)
 app.get('/', (req, res) => {
-  res.send('Secure Node.js Server with MVC structure is running!');
+  res.send(`Secure Node.js Server with MVC structure is running on ${SERVER_BASE_URL}! Environment: ${NODE_ENV}`);
 });
 
 // Error Handling Middleware (should be the last middleware)
@@ -83,14 +89,11 @@ app.use((err, req, res, next) => {
 // Start the server function
 const startServer = async () => {
   try {
-    await connectDB(); // Connect to the database
+    await connectDB();
 
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      // console.log('MongoDB connection successful and server listening.'); // connectDB already logs success
-      console.log('Registered routes (from server.js perspective, actual routes are in ./routes):');
-      console.log('- All application routes are now mounted via ./routes/index.js');
+    app.listen(PORT, () => { // PORT is now from appConfig
+      console.log(`Server running on ${SERVER_BASE_URL}`); // Use SERVER_BASE_URL for logging
+      console.log(`Current environment: ${NODE_ENV}`);
     });
   } catch (error) {
     // This catch is if connectDB() itself throws an unhandled rejection before process.exit(1)
