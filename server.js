@@ -1,11 +1,12 @@
 // server.js (Main Application File)
 const express = require('express');
-const session = require('express-session');
+// const session = require('express-session'); // No longer needed for JWT auth
 const passport = require('passport');
 const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
+const cookieParser = require('cookie-parser'); // Import cookie-parser
 
 // Import configurations from appConfig.js
 const { PORT, SESSION_SECRET, SERVER_BASE_URL, FRONTEND_URL, NODE_ENV } = require('./config/appConfig');
@@ -23,6 +24,9 @@ app.use(cors());
 // For more restrictive CORS in the future, you could use:
 // app.use(cors({ origin: FRONTEND_URL })); // Example
 
+// Cookie Parser Middleware
+app.use(cookieParser());
+
 // Security Headers
 app.use(helmet()); // Apply helmet for various security headers
 
@@ -39,23 +43,11 @@ app.use(limiter);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session Middleware - Use SESSION_SECRET from appConfig
-app.use(session({
-  secret: SESSION_SECRET, // Sourced from appConfig (which loads from .env or has a default)
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: NODE_ENV === 'production', // Use secure cookies in production
-    httpOnly: true, // Prevent client-side JS from accessing the cookie
-    // sameSite: 'Lax' // Consider adding SameSite attribute for CSRF protection
-  }
-}));
-
 // Passport Middleware
-app.use(passport.initialize());
-app.use(passport.session());
+app.use(passport.initialize()); // Initialize Passport, but no sessions
+// app.use(passport.session()); // No longer needed for JWT auth
 
-// Configure Passport (strategy, serialization, deserialization)
+// Configure Passport (strategy, serialization, deserialization will be removed from here)
 require('./config/passportConfig')(passport);
 
 // Mount the main router

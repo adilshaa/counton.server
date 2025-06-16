@@ -2,16 +2,17 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
-const { isAuthenticated } = require('../middleware/authMiddleware');
+// const { isAuthenticated } = require('../middleware/authMiddleware'); // Old session-based middleware
+const authenticateToken = require('../middleware/authenticateToken'); // New JWT-based middleware
 
-// @route   GET /profile (e.g., /users/profile if mounted at /users)
+// @route   GET /profile (assuming mounted at / in routes/index.js)
 // @desc    Get current user's profile
-// @access  Private
-router.get('/profile', isAuthenticated, userController.getUserProfile);
+// @access  Private (JWT Authenticated)
+router.get('/profile', authenticateToken, userController.getUserProfile);
 
-// @route   GET /api/data (e.g., /users/api/data if mounted at /users)
+// @route   GET /api/data
 // @desc    Get some protected data
-// @access  Private
-router.get('/api/data', isAuthenticated, userController.getProtectedData);
+// @access  Private (JWT Authenticated)
+router.get('/api/data', authenticateToken, userController.getProtectedData);
 
 module.exports = router;

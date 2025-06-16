@@ -26,16 +26,7 @@ module.exports = function(passport) {
     }
   ));
 
-  passport.serializeUser((user, done) => {
-    done(null, user.id); // user.id is the Mongoose document _id
-  });
-
-  passport.deserializeUser(async (id, done) => {
-    try {
-      const user = await User.findById(id);
-      done(null, user); // user will be null if not found, Passport handles this
-    } catch (err) {
-      done(err);
-    }
-  });
+  // passport.serializeUser and passport.deserializeUser are no longer needed for JWT
+  // as user information is not stored in a session.
+  // The authenticateToken middleware will fetch user info based on token.
 };

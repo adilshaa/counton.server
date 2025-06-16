@@ -18,4 +18,9 @@ router.post('/login', authController.loginUser);
 // @access  Private (implicitly, as you need to be logged in to log out)
 router.post('/logout', authController.logoutUser);
 
+// @route   POST /auth/refresh-token
+// @desc    Refresh access token
+// @access  Public (requires valid refresh token cookie)
+router.post('/refresh-token', authController.handleRefreshToken);
+
 module.exports = router;
