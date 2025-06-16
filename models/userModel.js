@@ -52,6 +52,14 @@ const UserSchema = new mongoose.Schema({
     type: String,
     enum: ['none', 'active', 'expired', 'cancelled', 'pending_payment'],
     default: 'none'
+  },
+  currentRefreshToken: {
+    type: String,
+    select: false // Not included in query results by default
+  },
+  currentRefreshTokenExpiresAt: {
+    type: Date,
+    select: false // Not included in query results by default
   }
 });
 
