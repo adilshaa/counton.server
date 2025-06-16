@@ -8,20 +8,22 @@ const {
 
 /**
  * Returns the PayPal SDK environment based on the configuration.
- * @returns {paypal.core.SandboxEnvironment | paypal.core.LiveEnvironment}
  */
 const environment = () => {
   if (PAYPAL_ENVIRONMENT === 'live') {
-    return new paypal.core.LiveEnvironment(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET);
+    // Attempt to access directly from 'paypal' object
+    return new paypal.LiveEnvironment(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET);
   }
-  // Default to Sandbox if not 'live' or if PAYPAL_ENVIRONMENT is not set explicitly
-  return new paypal.core.SandboxEnvironment(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET);
+  // Default to Sandbox
+  // Attempt to access directly from 'paypal' object
+  return new paypal.SandboxEnvironment(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET);
 };
 
 /**
  * PayPal HTTP client instance configured for the specified environment.
  */
-const client = new paypal.core.PayPalHttpClient(environment());
+// Attempt to access directly from 'paypal' object
+const client = new paypal.PayPalHttpClient(environment());
 
 /**
  * Helper function to pretty-print JSON responses from PayPal (for logging).
