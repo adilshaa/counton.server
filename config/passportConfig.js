@@ -1,35 +1,39 @@
 // config/passportConfig.js
 const LocalStrategy = require('passport-local').Strategy;
-const bcrypt = require('bcrypt');
-const { findUserByUsername, findUserById } = require('../models/userModel');
+// const bcrypt = require('bcrypt'); // No longer directly needed here if User model handles comparison
+const User = require('../models/userModel'); // Import Mongoose User model
 
 module.exports = function(passport) {
   passport.use(new LocalStrategy(
     async (username, password, done) => {
       try {
-        const user = findUserByUsername(username);
+        // Mongoose User model expects username to be lowercase as defined in schema
+        const user = await User.findOne({ username: username.toLowerCase() });
         if (!user) {
-          return done(null, false, { message: 'Incorrect username.' });
+          return done(null, false, { message: 'Incorrect username or user not found.' });
         }
-        const isValidPassword = await bcrypt.compare(password, user.password);
+
+        // Use the comparePassword method from the User model
+        const isValidPassword = await user.comparePassword(password);
         if (!isValidPassword) {
           return done(null, false, { message: 'Incorrect password.' });
         }
-        return done(null, user);
+
+        return done(null, user); // User authenticated
       } catch (err) {
-        return done(err);
+        return done(err); // Error during database query or other issue
       }
     }
   ));
 
   passport.serializeUser((user, done) => {
-    done(null, user.id);
+    done(null, user.id); // user.id is the Mongoose document _id
   });
 
-  passport.deserializeUser((id, done) => {
+  passport.deserializeUser(async (id, done) => {
     try {
-      const user = findUserById(id);
-      done(null, user); // Passport handles if user is undefined (not found)
+      const user = await User.findById(id);
+      done(null, user); // user will be null if not found, Passport handles this
     } catch (err) {
       done(err);
     }

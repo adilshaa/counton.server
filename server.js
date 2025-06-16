@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 
 // Import main router
 const routes = require('./routes/index'); // This will import routes/index.js
+const connectDB = require('./config/database'); // Import connectDB function
 
 // Initialize Express app
 const app = express();
@@ -75,12 +76,25 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('Registered routes (from server.js perspective, actual routes are in ./routes):');
-  console.log('- All application routes are now mounted via ./routes/index.js');
-  // To list routes more explicitly (for debugging purposes, can be complex with nested routers)
-  // you might need a helper function or to inspect `app._router.stack` or `routes.stack`.
-});
+// Start the server function
+const startServer = async () => {
+  try {
+    await connectDB(); // Connect to the database
+
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      // console.log('MongoDB connection successful and server listening.'); // connectDB already logs success
+      console.log('Registered routes (from server.js perspective, actual routes are in ./routes):');
+      console.log('- All application routes are now mounted via ./routes/index.js');
+    });
+  } catch (error) {
+    // This catch is if connectDB() itself throws an unhandled rejection before process.exit(1)
+    // or if app.listen fails, though connectDB handles its own critical failures by exiting.
+    console.error('Failed to start server:', error);
+    process.exit(1); // Exit if server cannot start
+  }
+};
+
+// Call the function to start the server
+startServer();
