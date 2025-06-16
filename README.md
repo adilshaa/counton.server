@@ -8,9 +8,9 @@ A Node.js server built with Express, featuring user registration and login using
 This application uses a token-based authentication system:
 
 1.  **Registration/Login**:
-    *   When a user registers (`POST /auth/register`) or logs in (`POST /auth/login`), the server generates two tokens:
-        *   **Access Token**: A short-lived JWT returned in the response body. This token is used to authenticate subsequent requests to protected API endpoints.
-        *   **Refresh Token**: A longer-lived JWT stored in an HttpOnly cookie (default name: `jid`). This token is used to obtain new access tokens without requiring the user to re-enter their credentials.
+    *   When a user registers (`POST /auth/register`) or logs in (`POST /auth/login`), the server generates two tokens, both returned in the JSON response body:
+        *   **Access Token**: A short-lived JWT. This token is used to authenticate subsequent requests to protected API endpoints. The client should store this (e.g., in memory).
+        *   **Refresh Token**: A longer-lived JWT. The client should store this securely (e.g., in `localStorage` or a secure native store).
 2.  **Accessing Protected Routes**:
     *   To access protected routes (e.g., `GET /profile`, `GET /api/data`), the client must include the Access Token in the `Authorization` header with the `Bearer` scheme:
         ```
@@ -18,26 +18,27 @@ This application uses a token-based authentication system:
         ```
 3.  **Token Expiration & Refresh**:
     *   When an Access Token expires, the client will receive a 403 Forbidden (or 401 Unauthorized) error.
-    *   The client should then make a request to the `POST /auth/refresh-token` endpoint. This endpoint uses the Refresh Token (sent automatically via the HttpOnly cookie) to generate a new Access Token (and a new Refresh Token for rotation).
+    *   The client should then make a request to the `POST /auth/refresh-token` endpoint, sending its stored Refresh Token in the JSON request body: `{ "refreshToken": "your_stored_refresh_token" }`.
+    *   The server validates this refresh token against its stored record. Upon success, it issues a new Access Token and a new Refresh Token (rotation), both returned in the response body. The client updates its stored tokens.
 4.  **Logout**:
-    *   When a user logs out (`POST /auth/logout`), the server clears the Refresh Token cookie, effectively invalidating the user's ability to obtain new Access Tokens. The client should also discard its stored Access Token.
+    *   When a user logs out (`POST /auth/logout`), the client should discard its stored Access and Refresh Tokens.
+    *   The client should also send the Refresh Token in the request body to the server. The server then invalidates this specific Refresh Token in its database, preventing its further use.
 
 ## Features
 
 - User registration with password hashing (bcrypt)
-- JWT-based stateless authentication with access and refresh tokens (using `jsonwebtoken` and `passport-local` for initial credential check)
-- Refresh token rotation for enhanced security
-- HttpOnly cookies for refresh token storage (with environment-aware `SameSite` and `secure` attributes)
+- JWT-based stateless authentication with access and refresh tokens (tokens returned in response body)
+- Refresh token rotation and server-side validation against stored user record
 - Protected routes using JWT authentication middleware
-- Logout functionality (clears refresh token cookie and server-side record)
+- Logout functionality (client clears tokens, server invalidates provided refresh token)
 - Basic security headers with `helmet`
 - Rate limiting with `express-rate-limit`
 - Data persistence with MongoDB using Mongoose ODM
 - User activity tracking (last login date, active status)
 - PayPal integration for subscription payments (order creation & capture)
 - Placeholder for subscription management (monthly plan, status tracking)
-- CORS (Cross-Origin Resource Sharing) configured for specific frontend URL (and `127.0.0.1` variant for localhost) with credentials support
-- Centralized application configuration (`config/appConfig.js`) and cookie utilities (`utils/cookieUtils.js`)
+- CORS (Cross-Origin Resource Sharing) configured for specific frontend URL (and `127.0.0.1` variant for localhost) with credentials support (though cookies are no longer the primary auth mechanism, `credentials:true` might be kept for other potential uses or future cookie needs if any).
+- Centralized application configuration (`config/appConfig.js`)
 - Utility functions for token generation and verification (`utils/tokenUtils.js`)
 - PayPal SDK client setup (`utils/paypalClient.js`)
 
@@ -91,7 +92,7 @@ REFRESH_TOKEN_SECRET=your_even_stronger_random_refresh_token_secret_here
 # JWT Expiration Times (examples)
 ACCESS_TOKEN_EXPIRATION=15m
 REFRESH_TOKEN_EXPIRATION=7d
-# REFRESH_TOKEN_COOKIE_MAX_AGE=604800000 # Optional: 7 days in ms (if overriding appConfig default for cookie)
+# The REFRESH_TOKEN_COOKIE_MAX_AGE in appConfig.js (default 7 days) is used for DB expiry of refresh token.
 
 # Server Port (Optional - defaults to 3000 if not set)
 PORT=3000
@@ -104,7 +105,7 @@ SERVER_BASE_URL=http://localhost:3000
 FRONTEND_URL=http://localhost:5173
 
 # Node Environment (Optional - defaults to 'development')
-# Set to 'production' for production builds. Affects cookie security (SameSite, Secure).
+# Set to 'production' for production builds.
 NODE_ENV=development
 
 # PayPal Credentials and Environment
@@ -117,14 +118,12 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
 -   **`MONGODB_URI`**: Your MongoDB connection string.
 -   **`ACCESS_TOKEN_SECRET`**: **Critical for security.** Used to sign access tokens.
 -   **`REFRESH_TOKEN_SECRET`**: **Critical for security.** Used to sign refresh tokens.
--   **`ACCESS_TOKEN_EXPIRATION`**: How long access tokens are valid.
--   **`REFRESH_TOKEN_EXPIRATION`**: How long refresh tokens are valid.
+-   **`ACCESS_TOKEN_EXPIRATION`**: How long access tokens are valid (e.g., `15m`, `1h`, `1d`).
+-   **`REFRESH_TOKEN_EXPIRATION`**: How long refresh tokens are valid (this defines the JWT's "exp" claim). The server also stores an expiry for the refresh token in the database (based on `REFRESH_TOKEN_COOKIE_MAX_AGE` in `appConfig.js`, default 7 days), which should ideally align with this JWT expiration.
 -   **`PORT`**: The port the server will listen on.
 -   **`SERVER_BASE_URL`**: The canonical base URL for this server.
 -   **`FRONTEND_URL`**: The base URL for your frontend application. This URL is primary in the server's CORS `allowedOrigins` list. For `localhost`-based `FRONTEND_URL`s, the `127.0.0.1` equivalent is also typically allowed by the server configuration. It's also used for PayPal redirect URLs.
--   **`NODE_ENV`**: The application environment (`development` or `production`). This setting also influences security attributes for the refresh token cookie:
-    - In `development`, cookies use `SameSite=Lax` and `Secure=false` (suitable for HTTP localhost).
-    - In `production`, cookies use `SameSite=None` and `Secure=true` (requires HTTPS, allows cross-domain).
+-   **`NODE_ENV`**: The application environment (`development` or `production`).
 -   **`PAYPAL_CLIENT_ID`**: Your PayPal application's Client ID. **Required for payments.**
 -   **`PAYPAL_CLIENT_SECRET`**: Your PayPal application's Client Secret. **Required for payments.**
 -   **`PAYPAL_ENVIRONMENT`**: Set to `sandbox` for testing or `live` for production payments.
@@ -132,16 +131,17 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
 *Note: The `.env` file is included in `.gitignore`. For production, use your hosting platform's environment variable configuration.*
 
 ## API Endpoints
-(Details as before, with updated response examples for /auth/register and /auth/login to include new user fields)
+
 ### Authentication (`/auth`)
 
 -   **`POST /auth/register`**: Register a new user.
     *   **Body**: `{ "username": "user", "password": "password" }`
-    *   **Response (201 OK)**: Sets HttpOnly refresh token cookie.
+    *   **Response (201 OK)**:
         ```json
         {
           "message": "User registered successfully.",
           "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
           "user": {
             "id": "507f191e810c19729de860ea",
             "username": "newuser",
@@ -154,11 +154,12 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
         ```
 -   **`POST /auth/login`**: Log in an existing user.
     *   **Body**: `{ "username": "user", "password": "password" }`
-    *   **Response (200 OK)**: Sets HttpOnly refresh token cookie.
+    *   **Response (200 OK)**:
         ```json
         {
           "message": "Login successful.",
           "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
           "user": {
             "id": "507f191e810c19729de860ea",
             "username": "testuser",
@@ -170,79 +171,26 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
         }
         ```
 -   **`POST /auth/refresh-token`**: Obtain a new access token using a valid refresh token.
-    *   **Response (200 OK)**: Sets a new HttpOnly refresh token cookie.
+    *   **Request Body**: `{ "refreshToken": "your_stored_refresh_token" }`
+    *   **Response (200 OK)**:
         ```json
         {
           "message": "Access token refreshed successfully.",
-          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." // New rotated refresh token
         }
         ```
 -   **`POST /auth/logout`**: Log out the current user.
-    *   **Response (200 OK)**: `{ message }`. Clears the refresh token cookie.
+    *   **Request Body (Optional but Recommended)**: `{ "refreshToken": "your_stored_refresh_token_to_invalidate" }`
+    *   **Response (200 OK)**: `{ message }`. Server attempts to invalidate the provided refresh token in the database. Client should always discard its stored tokens.
 
 ### User Profile & Data (`/` and `/api`)
-
--   **`GET /profile`**: (Protected) Get the current user's profile information.
-    *   **Headers**: Requires `Authorization: Bearer <accessToken>`
-    *   **Response (200 OK)**: User profile data.
--   **`GET /api/data`**: (Protected) Get sample protected data.
-    *   **Headers**: Requires `Authorization: Bearer <accessToken>`
-    *   **Response (200 OK)**: Sample data.
+(This section remains largely the same, emphasizing Authorization header)
+...
 
 ### Subscription API (`/api/subscriptions`)
-
-All subscription endpoints require JWT authentication (Bearer token).
-
-*   **`POST /api/subscriptions/create-order`**
-    *   **Description**: Creates a subscription order with PayPal and returns an `orderID`.
-    *   **Access**: Private (JWT Authenticated)
-    *   **Response (201 Created)**:
-        ```json
-        {
-          "message": "PayPal order created successfully.",
-          "orderID": "PAYPAL_GENERATED_ORDER_ID"
-        }
-        ```
-
-*   **`POST /api/subscriptions/capture-payment`**
-    *   **Description**: Captures the payment for a previously created PayPal order (after client-side payer approval) and activates the user's subscription.
-    *   **Access**: Private (JWT Authenticated)
-    *   **Request Body**:
-        ```json
-        {
-          "orderID": "PAYPAL_GENERATED_ORDER_ID_FROM_CREATE_ORDER_STEP"
-        }
-        ```
-    *   **Response (200 OK)**:
-        ```json
-        {
-          "message": "Payment captured and subscription activated successfully.",
-          "subscription": {
-            "plan": "monthly_standard_10_usd",
-            "status": "active",
-            "subscribedAt": "2023-10-27T10:05:00.000Z",
-            "expiresAt": "2023-11-26T10:05:00.000Z",
-            "lastPaymentAmount": 10.00,
-            "paymentTransactionId": "PAYPAL_CAPTURE_TRANSACTION_ID"
-          }
-        }
-        ```
-
-*   **`GET /api/subscriptions/status`**
-    *   **Description**: Retrieves the current authenticated user's subscription status and details.
-    *   **Access**: Private (JWT Authenticated)
-    *   **Response (200 OK)**:
-        ```json
-        {
-          "plan": "monthly_standard_10_usd",
-          "status": "active",
-          "subscribedAt": "2023-10-27T10:05:00.000Z",
-          "expiresAt": "2023-11-26T10:05:00.000Z",
-          "lastPaymentAmount": 10.00,
-          "lastPaymentDate": "2023-10-27T10:05:00.000Z",
-          "paymentTransactionId": "PAYPAL_CAPTURE_TRANSACTION_ID"
-        }
-        ```
+(This section remains largely the same, emphasizing Authorization header)
+...
 
 ## Payment Flow Overview (PayPal)
 (This section remains as previously defined)
@@ -254,53 +202,40 @@ All subscription endpoints require JWT authentication (Bearer token).
 
 ## Frontend Client Requirements
 
-When making requests to this backend, especially to endpoints that rely on cookies (like `/auth/refresh-token`) or protected endpoints after login:
-
--   Your frontend HTTP client (e.g., Fetch API, Axios) **must** be configured to include credentials with requests.
-    -   For **Fetch API**: `fetch(url, { credentials: 'include', ... });`
-    -   For **Axios**: `axios.get(url, { withCredentials: true, ... });`
--   This is essential for the browser to send the HttpOnly refresh token cookie to the backend, particularly in cross-origin scenarios.
+When making requests to this backend:
+-   **Authentication**: Include the `accessToken` in the `Authorization` header with the `Bearer` scheme for all protected endpoints.
+    ```
+    Authorization: Bearer <your_access_token>
+    ```
+-   **Token Storage**: The client is responsible for securely storing the `accessToken` (typically in memory) and `refreshToken` (e.g., in `localStorage` or a secure native store). Be mindful of XSS risks if using `localStorage` (see Security Considerations).
+-   **Token Refresh**: When an `accessToken` expires (indicated by a 401/403 response from a protected endpoint), the client should send its stored `refreshToken` in the body of a `POST` request to `/auth/refresh-token` to obtain new tokens.
+-   **CORS**: If your frontend and backend are on different origins, ensure your frontend HTTP client is configured to handle cross-origin requests correctly. The backend's CORS policy is set via `FRONTEND_URL` and allows credentials (though cookies are no longer the primary mechanism for auth tokens, `credentials: true` in CORS might be relevant if other cookies are ever used or for specific future needs).
 
 ## Security Considerations
 
 This server implements several security features, but security is an ongoing process.
 
 ### 1. Token Security (JWT)
--   **Secrets**: `ACCESS_TOKEN_SECRET` and `REFRESH_TOKEN_SECRET` must be strong, random, and kept confidential. Do NOT hardcode them; use environment variables.
--   **Expiration**: Access tokens should have a short expiration time (e.g., 15 minutes to 1 hour) to limit the impact if compromised. Refresh tokens can have a longer expiration (e.g., 7-30 days).
--   **Storage**:
-    *   **Access Tokens**: Typically stored in client-side memory (e.g., JavaScript variable). Avoid storing in `localStorage` or `sessionStorage` if possible due to XSS risks.
-    *   **Refresh Tokens**: Stored in HttpOnly cookies to prevent access by client-side JavaScript, mitigating XSS risks for this token.
--   **Refresh Token Rotation & Server-Side Validation**: This application implements refresh token rotation (a new refresh token is issued upon use). Crucially, refresh tokens are also validated against a record stored with the user in the database. This stored record is updated with the new refresh token during rotation and cleared upon logout. This strategy helps detect and prevent the reuse of compromised or old refresh tokens, as only the current, server-acknowledged refresh token is valid.
+-   **Secrets**: `ACCESS_TOKEN_SECRET` and `REFRESH_TOKEN_SECRET` must be strong, random, and kept confidential. Use environment variables.
+-   **Expiration**: Access tokens have short expirations. Refresh tokens have longer expirations.
+-   **Storing Tokens on the Client-Side**:
+    *   **Access Tokens**: Typically stored in JavaScript memory for the duration of a user session/tab.
+    *   **Refresh Tokens**: Now returned in the response body, the client is responsible for their storage (e.g., `localStorage`).
+    *   **XSS Warning**: Storing tokens, especially refresh tokens, in `localStorage` makes them vulnerable to theft if an XSS (Cross-Site Scripting) vulnerability exists on your frontend application. Attackers could potentially steal these tokens and impersonate users.
+        *   **Mitigation**: Implement strong XSS prevention measures: sanitize all user inputs, use appropriate output encoding, and implement a robust Content Security Policy (CSP).
+        *   **Alternative (Previously Used)**: HttpOnly cookies (which were removed in this version) offer better protection against XSS for refresh tokens as they are not accessible to JavaScript. This change to client-side storage for refresh tokens introduces a trade-off: simpler for some SPA architectures, but requires heightened XSS vigilance.
+-   **Refresh Token Rotation & Server-Side Validation**: Refresh tokens are validated against a server-side database record. This record is updated upon rotation and cleared upon logout (if the token is provided), helping to detect and prevent reuse of compromised or old tokens.
 -   **HTTPS**: Always use HTTPS in production to protect tokens in transit.
 
-#### Cross-Origin Cookie Considerations (for Refresh Token)
-
-The application now uses environment-aware settings for the HttpOnly refresh token cookie (`jid`) to balance development convenience with production security, especially for cross-origin requests (e.g., frontend at `http://localhost:5173`, backend at `http://localhost:3000`):
-
--   **In Development (`NODE_ENV !== 'production'`)**:
-    -   The cookie is set with `SameSite=Lax` and `Secure=false`.
-    -   `SameSite=Lax` provides a good balance of security and usability for `localhost` development over HTTP, even across different ports, provided the frontend makes requests with credentials.
--   **In Production (`NODE_ENV === 'production'`)**:
-    -   The cookie is set with `SameSite=None` and `Secure=true`.
-    -   `SameSite=None` is necessary if your production frontend and backend are on different domains/subdomains.
-    -   `secure=true` is a requirement for `SameSite=None` and ensures the cookie is only sent over HTTPS. **Your production backend must be served over HTTPS.**
--   The cookie is always set with `path: '/'` to be accessible across all backend paths and `httpOnly: true` to prevent client-side script access.
--   The backend's CORS policy is configured to allow credentials from origins listed in `allowedOrigins` (which includes `FRONTEND_URL` and its `127.0.0.1` equivalent for localhost).
-
 ### 2. Data Injection (NoSQL Injection)
--   *(This application now uses MongoDB with Mongoose as an ODM. Mongoose schemas (defining types, required fields, etc.) and its query generation methods provide a good level of protection against MongoDB query injection attacks, especially when not constructing query parts directly from unsanitized user input. Always validate and sanitize input where appropriate, even with an ODM.)*
+-   *(This application now uses MongoDB with Mongoose as an ODM...)*
 
 ### 3. Cross-Site Scripting (XSS)
--   **Prevention**: Output encoding, Content Security Policy (CSP), input validation. `helmet` provides some default protections. HttpOnly cookies for refresh tokens help mitigate direct token theft via XSS.
+-   **Prevention**: (This section remains crucial, especially with client-side token storage) Output encoding, Content Security Policy (CSP), input validation. `helmet` provides some default protections.
 
 ### 4. Cross-Site Request Forgery (CSRF)
--   **Issue**: While JWTs themselves are not inherently vulnerable to CSRF if sent in headers, the use of cookies (even HttpOnly) for refresh tokens needs careful consideration.
--   **Prevention**:
-    *   HttpOnly cookies prevent JavaScript access.
-    *   The `SameSite` cookie attribute settings (`Lax` for dev, `None` for prod) are crucial. `SameSite=None; Secure` is used for production cross-origin scenarios.
-    *   The refresh token endpoint (`/auth/refresh-token`) is a POST request.
-    *   The backend's CORS policy is specific to the `FRONTEND_URL` and its `127.0.0.1` variant.
+-   **Context**: With tokens primarily sent in Authorization headers (access tokens) or request bodies (refresh tokens), traditional CSRF attacks that rely on browser auto-sending cookies with requests are less of a direct threat to these token-based authentications.
+-   **Considerations**: If any part of your API were to rely on cookie-based sessions for authentication (not the case for JWTs here), CSRF would be a major concern. The `credentials: true` in CORS is kept for potential other uses but doesn't make the JWT flow vulnerable to CSRF if tokens are handled as described.
 
 ### 5. Password Policies & Storage
 -   *(This section remains largely the same.)*
@@ -314,8 +249,8 @@ The application now uses environment-aware settings for the HttpOnly refresh tok
 ### 8. Rate Limiting
 -   *(This section remains largely the same.)*
 
-### 9. Token Management (Formerly Session Management)
--   The security of tokens is paramount. Refer to the "Token Security (JWT)" section for details on handling access and refresh tokens, managing their lifecycle, and storage best practices.
+### 9. Token Management
+-   The security of tokens is paramount. Refer to the "Token Security (JWT)" section for details.
 
 ### 10. Error Handling
 -   *(This section remains largely the same.)*

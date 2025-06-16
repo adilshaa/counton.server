@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
-const cookieParser = require('cookie-parser'); // Import cookie-parser
+// const cookieParser = require('cookie-parser'); // No longer needed
 
 // Import configurations from appConfig.js
 const { PORT, SESSION_SECRET, SERVER_BASE_URL, FRONTEND_URL, NODE_ENV } = require('./config/appConfig');
@@ -53,8 +53,8 @@ app.use(cors({
   optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
 }));
 
-// Cookie Parser Middleware
-app.use(cookieParser());
+// Cookie Parser Middleware - No longer needed
+// app.use(cookieParser());
 
 // Security Headers
 app.use(helmet()); // Apply helmet for various security headers

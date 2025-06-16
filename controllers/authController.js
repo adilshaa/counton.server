@@ -11,12 +11,13 @@ const {
 const {
   REFRESH_TOKEN_COOKIE_NAME,
   REFRESH_TOKEN_COOKIE_MAX_AGE, // Still needed for DB expiry calculation
-  // NODE_ENV // No longer needed directly here, handled by cookieUtils
+  // NODE_ENV // No longer needed directly here
 } = require('../config/appConfig'); // Import cookie/env configurations
-const {
-  getRefreshTokenCookieOptions,
-  getClearRefreshTokenCookieOptions
-} = require('../utils/cookieUtils');
+// Cookie utilities are no longer used as refresh tokens are in request/response body
+// const {
+//   getRefreshTokenCookieOptions,
+//   getClearRefreshTokenCookieOptions
+// } = require('../utils/cookieUtils');
 
 // registerUser needs to be updated to return tokens instead of logging in via session
 const registerUser = async (req, res, next) => {
@@ -52,11 +53,12 @@ const registerUser = async (req, res, next) => {
 
     await newUser.save(); // Save again to store refresh token details
 
-    res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, getRefreshTokenCookieOptions());
+    // res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, getRefreshTokenCookieOptions()); // Cookie removed
 
     return res.status(201).json({
       message: 'User registered successfully.',
       accessToken,
+      refreshToken, // refreshToken added to response body
       user: {
         id: newUser._id,
         username: newUser.username,
@@ -107,11 +109,12 @@ const loginUser = (req, res, next) => {
 
       await user.save(); // Save again to store refresh token details
 
-      res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, getRefreshTokenCookieOptions());
+      // res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, getRefreshTokenCookieOptions()); // Cookie removed
 
       res.status(200).json({
         message: 'Login successful.',
         accessToken,
+        refreshToken, // refreshToken added to response body
         user: {
           id: user._id,
           username: user.username,
@@ -129,31 +132,30 @@ const loginUser = (req, res, next) => {
 };
 
 const logoutUser = async (req, res, next) => {
-  const refreshTokenFromCookie = req.cookies[REFRESH_TOKEN_COOKIE_NAME];
+  // Client is responsible for discarding its access token and the refresh token from its storage (e.g., localStorage).
+  // Server's main responsibility is to invalidate the refresh token if it's stored server-side.
 
-  // Clear the cookie regardless of whether the token is found or valid on the server.
-  // This ensures the client-side token is removed.
-  res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
-  // It's also good practice to send a no-cache header to prevent client-side caching of the logout response.
+  const { refreshToken: refreshTokenFromBody } = req.body;
+
+  // No Cache header
   res.setHeader('Cache-Control', 'no-store');
 
-  if (!refreshTokenFromCookie) {
-    // No refresh token cookie found, so nothing to invalidate on the server for this specific "session".
-    // Client-side cookie is cleared above.
-    return res.status(200).json({ message: 'Logout successful (no active session cookie found or already cleared).' });
+  if (!refreshTokenFromBody) {
+    // If client doesn't send a refresh token, there's nothing specific for the server to invalidate based on that token.
+    // The client should still clear its stored tokens.
+    return res.status(200).json({ message: 'Logout signal received. Client should clear tokens. No server-side refresh token provided for invalidation.' });
   }
 
   try {
-    const decodedRefreshToken = verifyRefreshToken(refreshTokenFromCookie);
+    const decodedRefreshToken = verifyRefreshToken(refreshTokenFromBody);
 
     if (decodedRefreshToken && decodedRefreshToken.id) {
-      // If token is validly signed and has an ID, attempt to find user and clear their DB token.
-      // We only clear the token if it matches the one provided, preventing one logout call from clearing a newer token
-      // if a very old cookie was somehow submitted.
+      // If token is validly signed and has an ID, attempt to find user and clear their DB token
+      // only if the provided token matches the current one.
       const user = await User.findOneAndUpdate(
         {
           _id: decodedRefreshToken.id,
-          currentRefreshToken: refreshTokenFromCookie // Only update if this is the current token
+          currentRefreshToken: refreshTokenFromBody // Only invalidate if this exact token is the current one
         },
         {
           $set: {
@@ -161,36 +163,41 @@ const logoutUser = async (req, res, next) => {
             currentRefreshTokenExpiresAt: null
           }
         },
-        { new: false } // Doesn't need to return the updated doc
+        { new: false }
       );
 
-      // No error if user or token wasn't found or didn't match; cookie is cleared anyway.
-      // The goal is to invalidate this specific refresh token if it was the active one.
+      // If 'user' is null here, it means no document matched (either user_id was wrong,
+      // or more likely, the refreshTokenFromBody was not the currentRefreshToken in the DB).
+      // This is fine, means the token was already invalid or superseded.
+      if (user) {
+        // console.log(`Invalidated refresh token for user: ${user._id}`);
+        return res.status(200).json({ message: 'Logout successful. Refresh token invalidated on server. Client should clear tokens.' });
+      } else {
+        return res.status(200).json({ message: 'Logout successful. Refresh token provided was not active or found. Client should clear tokens.' });
+      }
+    } else {
+      // Token was malformed or signature invalid
+      return res.status(200).json({ message: 'Logout successful. Invalid refresh token provided, no server-side invalidation based on it. Client should clear tokens.' });
     }
-    // If token is malformed or signature invalid, decodedRefreshToken will be null.
-    // In this case, we've already cleared the cookie, which is the main action.
-
-    return res.status(200).json({ message: 'Logout successful. Session invalidated if active token was provided.' });
 
   } catch (error) {
-    // console.error("Error during logout while trying to invalidate refresh token:", error);
-    // Even if there's an error (e.g., DB issue), the client-side cookie is already cleared.
-    // We can still send a success response for logout from client's perspective.
-    return res.status(200).json({ message: 'Logout processed (client cookie cleared). Server error during token invalidation.' });
+    // console.error("Error during server-side logout operations:", error);
+    // Even with a server error, the client should proceed to clear its tokens.
+    return res.status(500).json({ message: 'Logout processed with server error during token invalidation. Client should clear tokens.' });
   }
 };
 
 const handleRefreshToken = async (req, res, next) => {
-  const refreshTokenFromCookie = req.cookies[REFRESH_TOKEN_COOKIE_NAME];
+  const { refreshToken: refreshTokenFromBody } = req.body; // Get token from request body
 
-  if (!refreshTokenFromCookie) {
-    return res.status(401).json({ message: 'Unauthorized: No refresh token provided.' });
+  if (!refreshTokenFromBody) {
+    return res.status(401).json({ message: 'Unauthorized: No refresh token provided in request body.' });
   }
 
-  const decodedRefreshToken = verifyRefreshToken(refreshTokenFromCookie);
+  const decodedRefreshToken = verifyRefreshToken(refreshTokenFromBody);
 
   if (!decodedRefreshToken || !decodedRefreshToken.id) {
-    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
+    // No cookie to clear here
     return res.status(403).json({ message: 'Forbidden: Invalid refresh token signature or payload.' });
   }
 
@@ -199,22 +206,20 @@ const handleRefreshToken = async (req, res, next) => {
     const user = await User.findById(decodedRefreshToken.id).select('+currentRefreshToken +currentRefreshTokenExpiresAt');
 
     if (!user) {
-      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
+      // No cookie to clear
       return res.status(403).json({ message: 'Forbidden: User not found for refresh token.' });
     }
 
-    // Verify the token from cookie against the one stored in DB and check its DB expiry
+    // Verify the token from body against the one stored in DB and check its DB expiry
     if (!user.currentRefreshToken ||
-        user.currentRefreshToken !== refreshTokenFromCookie ||
+        user.currentRefreshToken !== refreshTokenFromBody || // Compare with token from body
         (user.currentRefreshTokenExpiresAt && new Date() > user.currentRefreshTokenExpiresAt)) {
 
-      // Token reuse detected or stored token expired/invalidated.
-      // Clear the potentially compromised/old token from DB for this user as a security measure.
       user.currentRefreshToken = null;
       user.currentRefreshTokenExpiresAt = null;
       await user.save();
 
-      res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
+      // No cookie to clear
       return res.status(403).json({ message: 'Forbidden: Refresh token is invalid, expired, or has been reused. Please log in again.' });
     }
 
@@ -234,18 +239,18 @@ const handleRefreshToken = async (req, res, next) => {
     user.currentRefreshTokenExpiresAt = new Date(Date.now() + REFRESH_TOKEN_COOKIE_MAX_AGE);
     await user.save();
 
-    // Set the new refresh token in the HttpOnly cookie
-    res.cookie(REFRESH_TOKEN_COOKIE_NAME, newRefreshToken, getRefreshTokenCookieOptions());
+    // Set the new refresh token in the HttpOnly cookie - REMOVED
+    // res.cookie(REFRESH_TOKEN_COOKIE_NAME, newRefreshToken, getRefreshTokenCookieOptions());
 
     return res.status(200).json({
       message: 'Access token refreshed successfully.',
-      accessToken: newAccessToken
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken // newRefreshToken added to response body
     });
 
   } catch (error) {
     // console.error("Error in handleRefreshToken:", error);
-    // It's safer to clear the cookie on any unexpected error during the refresh process.
-    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getClearRefreshTokenCookieOptions());
+    // No cookie to clear
     return res.status(500).json({ message: 'Internal server error during token refresh.' });
   }
 };
