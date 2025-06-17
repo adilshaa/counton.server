@@ -183,6 +183,24 @@ PAYPAL_ENVIRONMENT=sandbox # or 'live' for production
 -   **`POST /auth/logout`**: Log out the current user.
     *   **Request Body (Optional but Recommended)**: `{ "refreshToken": "your_stored_refresh_token_to_invalidate" }`
     *   **Response (200 OK)**: `{ message }`. Server attempts to invalidate the provided refresh token in the database. Client should always discard its stored tokens.
+*   **`GET /auth/me`**
+    *   **Description**: Retrieves details of the currently authenticated user. This endpoint can be used to verify an access token and get up-to-date user information.
+    *   **Authentication**: Requires JWT. Send `accessToken` in the `Authorization` header: `Bearer <accessToken>`.
+    *   **Successful Response (200 OK)**:
+        ```json
+        {
+          "id": "605c72ef1e3b4a001f8e4d2a",
+          "username": "testuser",
+          "isActive": true,
+          "lastLoginAt": "2023-10-27T12:00:00.000Z",
+          "subscriptionStatus": "active",
+          "subscriptionPlan": "monthly_standard",
+          "createdAt": "2023-10-26T08:30:00.000Z"
+        }
+        ```
+    *   **Error Responses**:
+        *   `401 Unauthorized`: If no token or an invalid token format is provided.
+        *   `403 Forbidden`: If the token is invalid (e.g., expired, signature mismatch) or the user associated with the token is not found.
 
 ### User Profile & Data (`/` and `/api`)
 (This section remains largely the same, emphasizing Authorization header)

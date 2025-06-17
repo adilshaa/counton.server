@@ -78,6 +78,43 @@ const registerUser = async (req, res, next) => {
   }
 };
 
+const getMe = async (req, res, next) => {
+  // The authenticateToken middleware should have already populated req.user
+  // with the authenticated user's Mongoose document (excluding password).
+  try {
+    if (!req.user || !req.user.id) {
+      // This case should ideally be caught by authenticateToken middleware,
+      // but as a safeguard:
+      return res.status(401).json({ message: 'Unauthorized: No user data found on request.' });
+    }
+
+    // We can re-fetch the user to ensure data is absolutely fresh,
+    // or trust req.user if the access token lifetime is short.
+    // For simplicity and to match login/register response structure,
+    // let's assume req.user is sufficiently fresh or re-fetch if needed.
+    // The current authenticateToken middleware *does* fetch the user.
+    // So req.user is a fresh Mongoose document.
+
+    const user = req.user; // User document from authenticateToken middleware
+
+    res.status(200).json({
+      // Replicate the user object structure returned by login/register
+      id: user._id, // or user.id if virtual getter is preferred and consistently used
+      username: user.username,
+      isActive: user.isActive,
+      lastLoginAt: user.lastLoginAt,
+      subscriptionStatus: user.subscriptionStatus,
+      subscriptionPlan: user.subscriptionPlan,
+      // Add any other relevant non-sensitive fields that are part of the user context
+      createdAt: user.createdAt
+    });
+
+  } catch (error) {
+    // console.error("Error in getMe controller:", error);
+    next(error); // Pass to global error handler
+  }
+};
+
 const loginUser = (req, res, next) => {
   passport.authenticate('local', { session: false }, async (err, user, info) => { // Make callback async
     if (err) { return next(err); }
@@ -259,5 +296,6 @@ module.exports = {
   registerUser,
   loginUser,
   logoutUser,
-  handleRefreshToken
+  handleRefreshToken,
+  getMe // <-- Add getMe here
 };

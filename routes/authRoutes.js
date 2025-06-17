@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const authenticateToken = require('../middleware/authenticateToken');
 
 // @route   POST /register (will be /auth/register if router is mounted at /auth)
 // @desc    Register a new user
@@ -22,5 +23,10 @@ router.post('/logout', authController.logoutUser);
 // @desc    Refresh access token
 // @access  Public (requires valid refresh token cookie)
 router.post('/refresh-token', authController.handleRefreshToken);
+
+// @route   GET /auth/me
+// @desc    Get current authenticated user's details
+// @access  Private (JWT Authenticated)
+router.get('/me', authenticateToken, authController.getMe);
 
 module.exports = router;
